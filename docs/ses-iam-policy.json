@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "Least-privilege IAM policy for the P3 credential (sender configuration only).",
+    "",
+    "ses:SendEmail and ses:SendRawEmail are deliberately ABSENT. P3 establishes the",
+    "trusted-sender foundation and has no delivery path; granting a send permission",
+    "the application cannot use would mean a leaked credential could send mail this",
+    "deployment itself cannot. The permission is added in P5, with the send path.",
+    "",
+    "Destructive identity actions are also absent — DeleteEmailIdentity in",
+    "particular. Removing a domain in this application removes only its row; the",
+    "provider identity is left in place, because recovering from an accidental or",
+    "hostile deletion means republishing DKIM records and waiting days for",
+    "propagation.",
+    "",
+    "Attach to the IAM user or role whose credentials are AWS_ACCESS_KEY_ID and",
+    "AWS_SECRET_ACCESS_KEY. Replace <region> and <account-id>."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SenderIdentityConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "ses:CreateEmailIdentity",
+        "ses:GetEmailIdentity",
+        "ses:PutEmailIdentityMailFromAttributes"
+      ],
+      "Resource": "arn:aws:ses:<region>:<account-id>:identity/*"
+    },
+    {
+      "Sid": "AccountPostureReadOnly",
+      "Effect": "Allow",
+      "Action": ["ses:GetAccount"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NoSendingBeforeP5",
+      "Effect": "Deny",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail",
+        "ses:SendBulkEmail",
+        "ses:SendTemplatedEmail",
+        "ses:DeleteEmailIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

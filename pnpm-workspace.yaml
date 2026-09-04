@@ -1,0 +1,6 @@
+# Native postinstall scripts are opt-in in pnpm 10+. These two are required:
+#   esbuild        — vitest's transform pipeline
+#   unrs-resolver  — the resolver used by eslint-config-next
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
