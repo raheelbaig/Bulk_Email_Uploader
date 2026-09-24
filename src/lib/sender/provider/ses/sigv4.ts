@@ -9,7 +9,7 @@ import { createHash, createHmac } from 'node:crypto';
  * `@aws-sdk/client-sesv2` ships `SendEmailCommand` in the same package as the
  * identity APIs. Installing it would put a fully-formed send path one import
  * away from any file in the codebase, and the standing guarantee this project
- * makes — enforced by tests/no-sending.test.ts — is that no such path exists
+ * makes — enforced by tests/sending-gates.test.ts — is that no such path exists
  * before P5. Signing four requests is roughly a hundred lines; a dependency that
  * can send email is not something a test can meaningfully constrain.
  *

@@ -30,6 +30,7 @@ import {
 } from './snapshot';
 import { isEditable, type CampaignStatus } from './status';
 import type { CampaignRecord, CampaignRepository, ListSummary } from './ports';
+import { sendingConfig, unsubscribeMechanismAvailable } from '@/lib/sending/config';
 
 /**
  * Campaigns.
@@ -44,12 +45,14 @@ import type { CampaignRecord, CampaignRepository, ListSummary } from './ports';
  * that is deliberate: every one of those decisions has exactly one home, and a
  * campaign is where they meet rather than where they are made again.
  *
- * ── What it cannot do ────────────────────────────────────────────────────
+ * ── What it does not do ──────────────────────────────────────────────────
  *
- * There is no function here that sends, dispatches, queues or launches anything,
- * and no transition it can request would reach a sending state — the database
- * refuses those for every role (migration 0009). `scheduleCampaign` freezes
- * content and records a time; nothing acts on that time.
+ * It does not send, and it does not launch. `scheduleCampaign` freezes content
+ * and records a time; from P5 the worker (`lib/sending/worker`) acts on that
+ * time, after running preflight again. Pausing, resuming and resolving uncertain
+ * sends live in `lib/sending/service`. The only states this module moves a
+ * campaign between are the preparation states, plus `cancelled` and the
+ * `paused → draft` return of a campaign that never started.
  */
 
 /** Contacts sampled from the audience for the preview picker. */
@@ -415,6 +418,11 @@ async function evaluate(view: CampaignView, intent: PreflightIntent): Promise<Pr
     senderReadiness: view.senderReadiness,
     template: view.template,
     snapshot: view.snapshot,
+    // P5: the mechanism's real state, and the deployment's real mode. Unsubscribe
+    // is enforced (preflight UNSUBSCRIBE_ENFORCED), so a campaign that requires it
+    // cannot be scheduled on a deployment that cannot sign the links.
+    unsubscribe: { mechanismAvailable: unsubscribeMechanismAvailable() },
+    sendingMode: sendingConfig().mode,
     sampleRender:
       sampleRender === null
         ? null
@@ -443,9 +451,10 @@ async function evaluate(view: CampaignView, intent: PreflightIntent): Promise<Pr
  * snapshot — and the `ck_campaigns_scheduled_complete` constraint refuses that
  * combination at the database anyway.
  *
- * Nothing about this makes the campaign deliverable. There is no promotion
- * sweep, no worker and no transition out of `scheduled` toward delivery. When
- * the time arrives the campaign sits there.
+ * From P5, the worker acts on the recorded time: when it arrives, preflight runs
+ * again against the frozen snapshot and the sender's current state, and only a
+ * campaign that passes is launched (`lib/sending/worker`). With the deployment's
+ * sending mode `disabled` — the default — the campaign stays scheduled.
  */
 export async function scheduleCampaign(
   workspaceId: string,
@@ -519,7 +528,10 @@ export async function unscheduleCampaign(
   await enforceRateLimit('campaign.write', access.userId, access.workspaceId);
 
   const repository = await campaignRepository(access.workspaceId);
-  const updated = await repository.transition(campaignId, ['scheduled'], 'draft', {
+  // `paused` covers a campaign held before it ever started (a missed schedule, or
+  // a failed launch check). One that did start cannot return to draft — the
+  // database refuses it — because its jobs and history belong to it.
+  const updated = await repository.transition(campaignId, ['scheduled', 'paused'], 'draft', {
     templateSnapshot: null,
   });
   if (updated === null) throw new ConflictError('That campaign is not scheduled.');
@@ -543,9 +555,12 @@ export async function cancelCampaign(
   const access = await requireWorkspace(workspaceId);
 
   const repository = await campaignRepository(access.workspaceId);
+  // Cancelling a campaign in flight cancels every message not yet handed to the
+  // provider (trg_campaigns_cancel_jobs, migration 0010). Messages already
+  // accepted cannot be recalled.
   const updated = await repository.transition(
     campaignId,
-    ['draft', 'validating', 'scheduled'],
+    ['draft', 'validating', 'scheduled', 'queued', 'sending', 'paused'],
     'cancelled',
   );
   if (updated === null) throw new ConflictError('That campaign can no longer be cancelled.');
@@ -573,7 +588,7 @@ export async function deleteCampaign(workspaceId: string, campaignId: string): P
   // The RLS DELETE policy permits only draft and cancelled campaigns, so a
   // refusal here means the campaign is in a state that is kept as history.
   if (!removed) {
-    throw new ConflictError('Only a draft or cancelled campaign can be deleted.');
+    throw new ConflictError('Only a draft or cancelled campaign that never started sending can be deleted.');
   }
 
   await writeAuditLog({

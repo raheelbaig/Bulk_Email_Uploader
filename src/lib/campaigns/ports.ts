@@ -40,6 +40,8 @@ export interface CampaignRecord {
   max_rate_override: number | null;
   pause_reason: string | null;
   launched_by: string | null;
+  /** Stamped at launch, once. Null until then (migration 0010). */
+  execution_mode: 'dry_run' | 'live' | null;
   n_total: number;
   n_sent: number;
   n_delivered: number;

@@ -17,7 +17,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "scan:secrets": "node scripts/scan-client-bundle.mjs",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm scan:secrets",
-    "test:security": "vitest run tests/rls.test.ts tests/rls-coverage.test.ts tests/source-security.test.ts tests/auth-guard.test.ts tests/service-scoping.test.ts"
+    "test:security": "vitest run tests/rls.test.ts tests/rls-coverage.test.ts tests/source-security.test.ts tests/auth-guard.test.ts tests/service-scoping.test.ts tests/sending-gates.test.ts tests/sending-db.test.ts tests/sending-routes.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",

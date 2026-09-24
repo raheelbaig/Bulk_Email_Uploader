@@ -11,7 +11,7 @@
  *
  * There is no send method, and no method that could be talked into one. P3 is
  * sender *configuration*; delivery arrives in P5 with its own review, its own
- * IAM permission and its own queue. `tests/no-sending.test.ts` asserts this
+ * IAM permission and its own queue. `tests/sending-gates.test.ts` asserts this
  * interface's method set exactly, so adding a send path here fails the build.
  */
 
@@ -55,6 +55,8 @@ export interface ProviderSendingLimits {
   sendingEnabled: boolean;
   max24HourSend: number | null;
   maxSendRate: number | null;
+  /** The provider's own count, authoritative over any local ledger (§15.3). */
+  sentLast24Hours: number | null;
 }
 
 /**
@@ -121,7 +123,7 @@ export interface EmailProvider {
   getSendingLimits(): Promise<ProviderSendingLimits>;
 }
 
-/** The method names the port exposes. Asserted by the no-sending guard. */
+/** The method names the port exposes. Asserted by tests/sending-gates.test.ts. */
 export const EMAIL_PROVIDER_METHODS = [
   'createDomainIdentity',
   'getDomainIdentity',

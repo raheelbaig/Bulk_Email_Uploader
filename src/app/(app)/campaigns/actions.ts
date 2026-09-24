@@ -16,17 +16,18 @@ import {
   unscheduleCampaign,
   updateCampaignDraft,
 } from '@/lib/campaigns/service';
+import { pauseSending, resolveUncertainSend, resumeSending } from '@/lib/sending/service';
 
 /**
  * Server actions for the campaign builder.
  *
  * ── What is not here ──────────────────────────────────────────────────────
  *
- * There is no send action, no test-send action, and no launch action. The
- * furthest any of these goes is `scheduleCampaign`, which freezes content and
- * records a time. Nothing acts on that time: the state machine has no transition
- * out of `scheduled` toward delivery, in this file, in the service, or in the
- * database (migration 0009).
+ * There is no "send now" action, no test-send action and no launch action. A
+ * campaign is delivered only by the worker (`lib/sending/worker`), when its
+ * scheduled time arrives and preflight passes again. What a person can do to a
+ * campaign in flight is stop it (pause, cancel), let it continue (resume, which
+ * re-runs preflight), and decide about messages whose outcome is unknown.
  *
  * The workspace is resolved server-side; no action accepts one from a form.
  * Campaign, list, sender and template ids are accepted and authorised in the
@@ -145,7 +146,7 @@ export async function scheduleCampaignAction(_prev: FormState, form: FormData): 
     return {
       ok: true,
       message:
-        'Campaign scheduled and its content frozen. This deployment cannot send email yet, so nothing will be delivered at the scheduled time.',
+        'Campaign scheduled and its content frozen. It starts at the scheduled time if the sending mode of this deployment allows it — the campaign page says which mode is active.',
     };
   });
 }
@@ -174,4 +175,45 @@ export async function deleteCampaignAction(form: FormData): Promise<void> {
   await deleteCampaign(workspaceId, String(form.get('campaignId') ?? ''));
   revalidatePath('/campaigns');
   redirect('/campaigns');
+}
+
+export async function pauseSendingAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:pauseSending', async () => {
+    const { workspaceId } = await currentWorkspace();
+    const campaignId = text(form, 'campaignId');
+    await pauseSending(workspaceId, campaignId);
+    refresh(campaignId);
+    return {
+      ok: true,
+      message: 'Paused. Messages already handed to Amazon SES cannot be recalled; nothing further will go out.',
+    };
+  });
+}
+
+export async function resumeSendingAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:resumeSending', async () => {
+    const { workspaceId } = await currentWorkspace();
+    const campaignId = text(form, 'campaignId');
+    await resumeSending(workspaceId, campaignId);
+    refresh(campaignId);
+    return { ok: true, message: 'Checks passed. The campaign will continue on the next worker run.' };
+  });
+}
+
+/**
+ * A decision about one message whose delivery could not be confirmed. The
+ * `redispatch` choice may deliver a duplicate; the UI says so beside the button.
+ */
+export async function resolveUncertainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:resolveUncertain', async () => {
+    const { workspaceId } = await currentWorkspace();
+    const campaignId = text(form, 'campaignId');
+    const decision = text(form, 'decision');
+    await resolveUncertainSend(workspaceId, text(form, 'jobId'), decision);
+    refresh(campaignId);
+    return {
+      ok: true,
+      message: decision === 'redispatch' ? 'The message will be sent again.' : 'The message was left as not sent.',
+    };
+  });
 }

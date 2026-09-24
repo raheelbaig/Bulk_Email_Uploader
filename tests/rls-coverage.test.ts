@@ -123,7 +123,7 @@ describe('RLS coverage guard', () => {
    * without this test being updated fails the build, which is the point: a
    * deny-all table must be a decision someone made and someone else reviewed.
    */
-  it('registers exactly the two deliberately deny-all tables, each with a reason', async () => {
+  it('registers exactly the three deliberately deny-all tables, each with a reason', async () => {
     const rows = await db.raw<{ table_name: string; reason: string }>(
       'select table_name, reason from app.rls_policy_exceptions order by table_name',
     );
@@ -131,6 +131,8 @@ describe('RLS coverage guard', () => {
     expect(rows.rows.map((r) => r.table_name)).toEqual([
       // P2. Background queue state and limiter counters: service-role only.
       'import_jobs',
+      // P5. The send budget: service-role only, for the same reason.
+      'rate_ledger',
       'rate_limits',
     ]);
     for (const row of rows.rows) {

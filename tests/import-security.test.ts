@@ -438,7 +438,8 @@ describe('the queue and limiter are invisible to clients', () => {
     const res = await db.raw<{ table_name: string; reason: string }>(
       `select table_name, reason from app.rls_policy_exceptions order by table_name`,
     );
-    expect(res.rows.map((r) => r.table_name)).toEqual(['import_jobs', 'rate_limits']);
+    // rate_ledger (P5) is registered alongside, for the same reason as rate_limits.
+    expect(res.rows.map((r) => r.table_name)).toEqual(['import_jobs', 'rate_ledger', 'rate_limits']);
     for (const row of res.rows) expect(row.reason.length).toBeGreaterThan(30);
   });
 

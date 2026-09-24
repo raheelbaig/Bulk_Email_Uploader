@@ -3,7 +3,9 @@ import { Plus, Send } from 'lucide-react';
 import { currentWorkspace } from '@/lib/auth/workspace';
 import { listCampaigns, workspaceTimeZone } from '@/lib/campaigns/service';
 import { formatInZone } from '@/lib/campaigns/schedule';
-import { SCHEDULED_INERT_NOTICE, STATUS_LABEL, STATUS_TONE } from '@/lib/campaigns/status';
+import { STATUS_LABEL, STATUS_TONE } from '@/lib/campaigns/status';
+import { sendingConfig } from '@/lib/sending/config';
+import { SENDING_MODE_NOTICE } from '@/lib/sending/gate';
 import { createCampaignAction } from './actions';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
@@ -29,7 +31,7 @@ export default async function CampaignsPage() {
         </p>
       </div>
 
-      <Alert>{SCHEDULED_INERT_NOTICE}</Alert>
+      <Alert>{SENDING_MODE_NOTICE[sendingConfig().mode]}</Alert>
 
       <details className="rounded-lg border" open={page.items.length === 0}>
         <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">

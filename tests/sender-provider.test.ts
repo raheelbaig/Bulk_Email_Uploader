@@ -366,7 +366,7 @@ describe('account posture', () => {
         body: {
           ProductionAccessEnabled: false,
           SendingEnabled: true,
-          SendQuota: { Max24HourSend: 200, MaxSendRate: 1 },
+          SendQuota: { Max24HourSend: 200, MaxSendRate: 1, SentLast24Hours: 17 },
         },
       },
     ]);
@@ -375,6 +375,7 @@ describe('account posture', () => {
       sendingEnabled: true,
       max24HourSend: 200,
       maxSendRate: 1,
+      sentLast24Hours: 17,
     });
   });
 

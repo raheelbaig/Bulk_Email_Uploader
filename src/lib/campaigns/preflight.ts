@@ -51,38 +51,36 @@ import { checkStoredSchedule, formatInZone, SCHEDULE_FAILURE_MESSAGE } from './s
 import { isEditable, type CampaignStatus } from './status';
 import { snapshotIsStale, type TemplateSnapshot } from './snapshot';
 import type { CampaignRecord } from './ports';
+import { SENDING_MODE_NOTICE, type SendingMode } from '@/lib/sending/gate';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The unsubscribe mechanism
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Whether this deployment has a working one-click unsubscribe.
+ * The assumed state of the unsubscribe mechanism when the caller does not say.
  *
- * It does not. P6 builds the signed unsubscribe endpoint, the `List-Unsubscribe`
- * headers and the suppression write behind them. Faking any of that now would be
- * worse than not having it: a link that looks like an unsubscribe and does
- * nothing is a compliance failure with a UI.
+ * P5 builds the mechanism — signed links (`lib/unsubscribe`), `List-Unsubscribe`
+ * and one-click headers, the `/u/[token]` endpoint and the suppression write
+ * behind it — but whether it *works* in a given deployment depends on a signing
+ * key being configured. That is an environment fact, and this module is pure, so
+ * the server passes it in (`lib/sending/config#unsubscribeMechanismAvailable`).
  *
- * So the fact is recorded as a constant, and the preflight *says so*, on every
- * campaign that requires it. P6 flips this to `true` when the endpoint exists.
+ * The default is the safe reading: a caller that forgets to say gets "not
+ * available", which blocks rather than permits.
  */
 export const UNSUBSCRIBE_MECHANISM_AVAILABLE = false;
 
 /**
  * Whether a missing unsubscribe mechanism blocks a campaign.
  *
- * At P4 it does not, and the reason is worth stating precisely: P4 cannot send.
- * A campaign that requires unsubscribe and has no mechanism cannot violate
- * anything, because it cannot reach a recipient — so blocking it here would stop
- * people preparing campaigns for a capability that is deliberately not built
- * yet, and would teach them that the preflight list is noise.
- *
- * P5 must flip this to `true` in the same change that adds a send path, and
- * `tests/campaign-preflight.test.ts` exercises both settings so the enforcing
- * behaviour is proven before it is needed.
+ * P4 left this `false` because P4 could not send, and said P5 must flip it in the
+ * same change that adds a send path. This is that change. A campaign that
+ * requires unsubscribe and has no working mechanism can no longer be scheduled
+ * or launched — and `lib/sending/compose.ts` refuses to build a message without
+ * a link, as a second lock on the same door.
  */
-export const UNSUBSCRIBE_ENFORCED = false;
+export const UNSUBSCRIBE_ENFORCED = true;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Result shape
@@ -143,8 +141,13 @@ export type PreflightCode =
   | 'schedule_in_past'
   | 'schedule_far_future'
   | 'schedule_time'
-  // the standing guarantee
-  | 'sending_not_available';
+  // launch (P5)
+  | 'campaign_not_launchable'
+  | 'template_snapshot_missing'
+  // what the deployment will do with this campaign
+  | 'sending_not_available'
+  | 'sending_dry_run'
+  | 'sending_live';
 
 export interface PreflightIssue {
   code: PreflightCode;
@@ -165,8 +168,19 @@ export interface PreflightResult {
   issues: PreflightIssue[];
 }
 
-/** Whether the run is a check or the final gate before scheduling. */
-export type PreflightIntent = 'check' | 'schedule';
+/**
+ * Why the preflight is running.
+ *
+ *   check     a person asked "is this ready?"
+ *   schedule  the final gate before content is frozen and a time recorded
+ *   launch    the worker, when a scheduled campaign's time arrives, and a person
+ *             resuming a paused one (ARCHITECTURE §19.1: preflight runs three
+ *             times, because a domain can lose verification between scheduling
+ *             and sending). Judges the *frozen snapshot*, not the live template,
+ *             and does not re-judge the schedule — the time has, by definition,
+ *             arrived.
+ */
+export type PreflightIntent = 'check' | 'schedule' | 'launch';
 
 export interface PreflightInput {
   campaign: CampaignRecord;
@@ -190,9 +204,12 @@ export interface PreflightInput {
 
   unsubscribe?: {
     mechanismAvailable?: boolean;
-    /** Injected so the enforcing behaviour is testable before P5 turns it on. */
+    /** Injected so both settings stay provable. Defaults to UNSUBSCRIBE_ENFORCED. */
     enforced?: boolean;
   };
+
+  /** The deployment's sending mode, so the verdict can say what will happen. */
+  sendingMode?: SendingMode;
 
   now?: Date;
   timeZone?: string;
@@ -231,8 +248,28 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
     issues.push(issue);
   };
 
+  const launching = input.intent === 'launch';
+
   // ── The campaign itself ─────────────────────────────────────────────────
-  if (!isEditable(input.campaign.status as CampaignStatus)) {
+  if (launching) {
+    if (!['scheduled', 'paused'].includes(input.campaign.status)) {
+      add({
+        code: 'campaign_not_launchable',
+        severity: 'blocker',
+        title: 'Campaign cannot start',
+        message: 'Only a scheduled or paused campaign can start sending.',
+      });
+    }
+    if (input.snapshot === null) {
+      add({
+        code: 'template_snapshot_missing',
+        severity: 'blocker',
+        title: 'Frozen content is missing',
+        message: 'This campaign has no frozen copy of its content, so there is nothing to send.',
+        remediation: 'Unschedule the campaign and schedule it again.',
+      });
+    }
+  } else if (!isEditable(input.campaign.status as CampaignStatus)) {
     add({
       code: 'campaign_not_editable',
       severity: 'blocker',
@@ -493,9 +530,10 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
         severity: enforced ? 'blocker' : 'warning',
         title: 'One-click unsubscribe is not available yet',
         message:
-          'This campaign is marked as requiring an unsubscribe link, and this deployment does not provide one yet. It cannot be delivered until it does.',
-        remediation:
-          'Nothing to do now — the campaign records the requirement and is not deliverable in any case.',
+          'This campaign is marked as requiring an unsubscribe link, and this deployment cannot sign unsubscribe links. It cannot be delivered until it can.',
+        remediation: enforced
+          ? 'Ask an administrator to configure UNSUBSCRIBE_SECRET_V1 for this deployment.'
+          : 'Nothing to do now — the campaign records the requirement.',
       });
     }
   } else {
@@ -510,7 +548,10 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
 
   // ── Schedule ────────────────────────────────────────────────────────────
   const schedule = checkStoredSchedule(input.campaign.scheduled_at, now);
-  if (!schedule.ok) {
+  if (launching) {
+    // Not re-judged: the worker only launches a campaign whose time has come,
+    // and the missed-schedule grace window (ADR-0002 §5.1) is enforced in SQL.
+  } else if (!schedule.ok) {
     const missing = schedule.reason === 'empty';
     if (missing && input.intent === 'check') {
       add({
@@ -550,15 +591,15 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
     }
   }
 
-  // ── The standing guarantee ──────────────────────────────────────────────
-  // Stated on every result, at every severity level, because a person looking at
-  // a green "Ready" badge must not conclude that mail is about to go out.
+  // ── What will actually happen ───────────────────────────────────────────
+  // Stated on every result, because a person looking at a green "Ready" badge
+  // must know whether that means real mail, a rehearsal, or nothing at all.
+  const mode: SendingMode = input.sendingMode ?? 'disabled';
   add({
-    code: 'sending_not_available',
+    code: mode === 'live' ? 'sending_live' : mode === 'dry_run' ? 'sending_dry_run' : 'sending_not_available',
     severity: 'info',
-    title: 'Sending is not enabled',
-    message:
-      'This deployment can prepare and schedule campaigns but cannot deliver email. A scheduled campaign will not send.',
+    title: mode === 'live' ? 'Live sending' : mode === 'dry_run' ? 'Dry run' : 'Sending is not enabled',
+    message: SENDING_MODE_NOTICE[mode],
   });
 
   const blockers = issues.filter((issue) => issue.severity === 'blocker');

@@ -7,20 +7,22 @@ import {
   CAMPAIGN_STATUSES,
   canTransition,
   isEditable,
+  TERMINAL_STATUSES,
   TRANSITIONS,
-  UNREACHABLE_STATUSES,
   type CampaignStatus,
 } from '@/lib/campaigns/status';
 
 /**
  * The campaign state machine, proven against the real database.
  *
- * Two claims here cannot be made by application code, and both are the reason
- * P4 can be built at all without a way to send:
+ * Claims here cannot be made by application code:
  *
  *   1. No role — including `service_role`, which bypasses RLS entirely — can
- *      move a campaign into a sending state. The transition trigger refuses it.
- *   2. A frozen snapshot cannot be rewritten while the campaign holds it.
+ *      make a transition the machine does not list. P5 added the delivery
+ *      transitions (migration 0010); every other jump is still refused.
+ *   2. A campaign is launched once, only by `scheduled → queued`, and the
+ *      launch stamp can never be rewritten or removed.
+ *   3. A frozen snapshot cannot be rewritten while the campaign holds it.
  *
  * The third section asserts that the TypeScript mirror in `lib/campaigns/status.ts`
  * agrees with the SQL function, transition for transition, so the two cannot
@@ -132,51 +134,103 @@ describe('campaign state machine', () => {
   // ── What no role can do ───────────────────────────────────────────────────
 
   describe('the transitions nothing can perform', () => {
-    it('no status has an inbound transition toward delivery', () => {
-      expect([...UNREACHABLE_STATUSES].sort()).toEqual([
-        'completed',
-        'failed',
-        'paused',
-        'queued',
-        'sending',
-      ]);
+    /** A complete scheduled campaign, built through the real transitions. */
+    const scheduledCampaign = async (tag: string): Promise<string> => {
+      const id = await seedCampaign(db, alice.workspaceId);
+      const listId = await seedList(db, alice.workspaceId, `L-${tag}`);
+      const templateId = await seedTemplate(db, alice.workspaceId, { name: `T-${tag}` });
+      const domainId = await seedSenderDomain(db, alice.workspaceId, `${tag}.test`, verifiedDomainState());
+      const identityId = await seedSenderIdentity(db, alice.workspaceId, domainId, `x@${tag}.test`);
+      await db.raw(
+        `update campaigns set list_id = $2, template_id = $3, sender_identity_id = $4,
+                              scheduled_at = now() - interval '1 minute'
+          where id = $1`,
+        [id, listId, templateId, identityId],
+      );
+      await setStatus(id, 'validating');
+      await db.raw(
+        `update campaigns set status = 'scheduled', template_snapshot = '{"frozen": true}'::jsonb where id = $1`,
+        [id],
+      );
+      return id;
+    };
+
+    it('the terminal states have no way out', () => {
+      expect([...TERMINAL_STATUSES].sort()).toEqual(['cancelled', 'completed', 'failed']);
+      for (const status of TERMINAL_STATUSES) expect(TRANSITIONS[status]).toEqual([]);
     });
 
-    it.each(['queued', 'sending', 'paused', 'completed', 'failed'] as const)(
-      'refuses scheduled to %s — there is no send path to advance into',
+    it.each(['sending', 'completed', 'failed'] as const)(
+      'refuses scheduled to %s — a campaign cannot skip its launch',
       async (to) => {
-        const id = await seedCampaign(db, alice.workspaceId);
-        await setStatus(id, 'validating');
-        await db.raw(
-          `update campaigns set status = 'scheduled', scheduled_at = now() + interval '1 day',
-                                list_id = null, template_snapshot = null
-            where id = $1`,
-          [id],
-        ).catch(() => undefined);
-
-        // `ck_campaigns_scheduled_complete` refuses an incomplete scheduled row,
-        // so build a complete one before testing the transition itself.
-        const listId = await seedList(db, alice.workspaceId, `L-${to}`);
-        const templateId = await seedTemplate(db, alice.workspaceId, { name: `T-${to}` });
-        const domainId = await seedSenderDomain(db, alice.workspaceId, `${to}.test`, verifiedDomainState());
-        const identityId = await seedSenderIdentity(db, alice.workspaceId, domainId, `x@${to}.test`);
-
-        await db.raw(
-          `update campaigns
-              set list_id = $2, template_id = $3, sender_identity_id = $4,
-                  scheduled_at = now() + interval '1 day',
-                  template_snapshot = '{"frozen": true}'::jsonb,
-                  status = 'scheduled'
-            where id = $1`,
-          [id, listId, templateId, identityId],
-        );
-        expect(await statusOf(id)).toBe('scheduled');
-
+        const id = await scheduledCampaign(`skip-${to}`);
         const err = await expectRejected(() => setStatus(id, to));
         expect(err.message).toMatch(/not permitted/i);
         expect(await statusOf(id)).toBe('scheduled');
       },
     );
+
+    it('scheduled to queued without a launch stamp is refused', async () => {
+      const id = await scheduledCampaign('nostamp');
+      const err = await expectRejected(() => setStatus(id, 'queued'));
+      expect(err.message).toMatch(/ck_campaigns_launch|check constraint/i);
+      expect(await statusOf(id)).toBe('scheduled');
+    });
+
+    it('launches through scheduled → queued → sending, stamping the launch once', async () => {
+      const id = await scheduledCampaign('launch');
+      await db.raw(
+        `update campaigns set status = 'queued', launched_at = now(), execution_mode = 'dry_run' where id = $1`,
+        [id],
+      );
+      await setStatus(id, 'sending');
+      expect(await statusOf(id)).toBe('sending');
+
+      const rewrite = await expectRejected(() =>
+        db.raw(`update campaigns set execution_mode = 'live' where id = $1`, [id]),
+      );
+      expect(rewrite.message).toMatch(/launch stamp/i);
+      const unstamp = await expectRejected(() =>
+        db.raw(`update campaigns set launched_at = null, execution_mode = null where id = $1`, [id]),
+      );
+      expect(unstamp.message).toMatch(/launch stamp/i);
+    });
+
+    it('a campaign cannot be launched by any other transition', async () => {
+      const id = await seedCampaign(db, alice.workspaceId);
+      const err = await expectRejected(() =>
+        db.raw(`update campaigns set launched_at = now(), execution_mode = 'live' where id = $1`, [id]),
+      );
+      expect(err.message).toMatch(/only by the scheduled/i);
+    });
+
+    it('a launched, paused campaign cannot return to draft', async () => {
+      const id = await scheduledCampaign('nodraft');
+      await db.raw(
+        `update campaigns set status = 'queued', launched_at = now(), execution_mode = 'dry_run' where id = $1`,
+        [id],
+      );
+      await setStatus(id, 'sending');
+      await setStatus(id, 'paused');
+      const err = await expectRejected(() =>
+        db.raw(`update campaigns set status = 'draft', template_snapshot = null where id = $1`, [id]),
+      );
+      expect(err.message).toMatch(/cannot return to draft/i);
+    });
+
+    it('a never-launched, paused campaign cannot be resumed — only unscheduled', async () => {
+      const id = await scheduledCampaign('noresume');
+      await db.raw(`update campaigns set status = 'paused', pause_reason = 'missed_schedule' where id = $1`, [id]);
+      const err = await expectRejected(() => setStatus(id, 'sending'));
+      expect(err.message).toMatch(/never started/i);
+
+      await db.raw(`update campaigns set status = 'draft', template_snapshot = null where id = $1`, [id]);
+      const row = await db.raw<{ status: string; pause_reason: string | null }>(
+        `select status::text as status, pause_reason from campaigns where id = $1`,
+        [id],
+      );
+      expect(row.rows[0]).toEqual({ status: 'draft', pause_reason: null });
+    });
 
     it.each([
       ['draft', 'sending'],
@@ -197,7 +251,7 @@ describe('campaign state machine', () => {
     it('the service role is not exempt', async () => {
       const id = await seedCampaign(db, alice.workspaceId);
       // service_role has BYPASSRLS and every grant. The trigger is not a policy,
-      // so it still applies — which is what makes "no sending" a property of the
+      // so it still applies — which is what makes the machine a property of the
       // database rather than of the application.
       await db.asServiceRole(async (as) => {
         const err = await expectRejected(() =>
@@ -253,11 +307,10 @@ describe('campaign state machine', () => {
       }
     });
 
-    it('no unreachable status appears as a transition target anywhere', () => {
-      for (const targets of Object.values(TRANSITIONS)) {
-        for (const target of targets) {
-          expect(UNREACHABLE_STATUSES).not.toContain(target);
-        }
+    it('every status except draft is reachable, and draft is where every campaign starts', () => {
+      const reachable = new Set(Object.values(TRANSITIONS).flat());
+      for (const status of CAMPAIGN_STATUSES) {
+        if (status !== 'draft') expect(reachable.has(status), status).toBe(true);
       }
     });
   });

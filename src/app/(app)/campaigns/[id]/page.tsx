@@ -9,16 +9,23 @@ import {
 import { listSenderIdentities } from '@/lib/sender/identities';
 import { listTemplateOptions } from '@/lib/templates/service';
 import { formatInZone, toLocalInputValue } from '@/lib/campaigns/schedule';
-import { SCHEDULED_INERT_NOTICE, STATUS_LABEL, STATUS_TONE } from '@/lib/campaigns/status';
+import { STATUS_LABEL, STATUS_TONE, TERMINAL_STATUSES, pauseReasonLabel } from '@/lib/campaigns/status';
 import { BLOCKER_MESSAGE } from '@/lib/sender/readiness';
+import { sendingConfig } from '@/lib/sending/config';
+import { LIVE_REQUIREMENT_MESSAGE, SENDING_MODE_NOTICE } from '@/lib/sending/gate';
+import { getDeliverySummary } from '@/lib/sending/service';
 import {
   cancelCampaignAction,
   deleteCampaignAction,
+  pauseSendingAction,
+  resolveUncertainAction,
+  resumeSendingAction,
   runPreflightAction,
   scheduleCampaignAction,
   unscheduleCampaignAction,
   updateCampaignAction,
 } from '../actions';
+import { DeliveryPanel } from '@/components/delivery-panel';
 import { ActionForm } from '@/components/action-form';
 import { PreflightReport } from '@/components/preflight-report';
 import { MessagePreview } from '@/components/template-preview';
@@ -43,8 +50,9 @@ export const dynamic = 'force-dynamic';
  * that shipped a hundred-thousand-row list to a browser to populate a dropdown
  * would be the scan this whole design avoids.
  *
- * It does not offer a way to send. The final control is "Schedule campaign", and
- * the notice beside it says plainly that nothing will be delivered.
+ * It does not offer a way to send. The final control is "Schedule campaign";
+ * delivery is the worker's, when the time arrives, and the notice beside the
+ * button states what this deployment's sending mode will do with it.
  */
 function Step({
   number,
@@ -99,6 +107,15 @@ export default async function CampaignPage({
 
   const campaign = view.campaign;
   const editable = view.editable;
+  const sending = sendingConfig();
+  const launched = campaign.launched_at !== null;
+  const delivery = launched ? await getDeliverySummary(workspaceId, campaign.id) : null;
+  const modeNotice =
+    sending.mode === 'live' && !sending.live.allowed
+      ? `Live mode is selected but not every requirement is met, so no campaign will start: ${sending.live.unmet
+          .map((requirement) => LIVE_REQUIREMENT_MESSAGE[requirement])
+          .join(' ')}`
+      : SENDING_MODE_NOTICE[sending.mode];
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +134,7 @@ export default async function CampaignPage({
           </h1>
         </div>
         <div className="flex gap-2">
-          {view.status !== 'cancelled' && (
+          {!TERMINAL_STATUSES.includes(view.status) && (
             <form action={cancelCampaignAction}>
               <input type="hidden" name="campaignId" value={campaign.id} />
               <Button type="submit" variant="outline" size="sm">
@@ -125,20 +142,48 @@ export default async function CampaignPage({
               </Button>
             </form>
           )}
-          <form action={deleteCampaignAction}>
-            <input type="hidden" name="campaignId" value={campaign.id} />
-            <Button type="submit" variant="destructive" size="sm">
-              Delete
-            </Button>
-          </form>
+          {!launched && (
+            <form action={deleteCampaignAction}>
+              <input type="hidden" name="campaignId" value={campaign.id} />
+              <Button type="submit" variant="destructive" size="sm">
+                Delete
+              </Button>
+            </form>
+          )}
         </div>
       </div>
 
       {!editable && view.status === 'scheduled' && (
         <Alert>
-          This campaign is scheduled and its content is frozen. {SCHEDULED_INERT_NOTICE} Unschedule
-          it to make further changes.
+          This campaign is scheduled and its content is frozen. {modeNotice} Unschedule it to make
+          further changes.
         </Alert>
+      )}
+
+      {view.status === 'paused' && !launched && (
+        <Alert tone="destructive">
+          {pauseReasonLabel(campaign.pause_reason)}
+          <div className="mt-3">
+            <ActionForm
+              action={unscheduleCampaignAction}
+              submitLabel="Return to draft"
+              pendingLabel="Working…"
+              variant="outline"
+            >
+              <input type="hidden" name="campaignId" value={campaign.id} />
+            </ActionForm>
+          </div>
+        </Alert>
+      )}
+
+      {delivery !== null && (
+        <DeliveryPanel
+          campaign={campaign}
+          summary={delivery}
+          pauseAction={pauseSendingAction}
+          resumeAction={resumeSendingAction}
+          resolveAction={resolveUncertainAction}
+        />
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
@@ -282,8 +327,14 @@ export default async function CampaignPage({
             title="Review and preflight"
             description="Every check, every time. Blockers must be cleared; warnings are yours to accept."
           >
-            <PreflightReport result={result} />
-            <div className="mt-3">
+            {launched ? (
+              <p className="text-sm text-[--color-muted-foreground]">
+                This campaign has started. Its checks ran again at launch, and run again on resume.
+              </p>
+            ) : (
+              <PreflightReport result={result} />
+            )}
+            <div className={launched || !editable ? 'hidden' : 'mt-3'}>
               <ActionForm
                 action={runPreflightAction}
                 submitLabel="Run checks"
@@ -321,7 +372,7 @@ export default async function CampaignPage({
                   />
                 </ActionForm>
 
-                <Alert>{SCHEDULED_INERT_NOTICE}</Alert>
+                <Alert>{modeNotice}</Alert>
 
                 <ActionForm
                   action={scheduleCampaignAction}

@@ -8,6 +8,7 @@ import {
   boolean,
   inet,
   integer,
+  smallint,
   pgEnum,
   primaryKey,
   index,
@@ -393,6 +394,7 @@ export const campaigns = pgTable(
     maxRateOverride: integer('max_rate_override'),
     pauseReason: text('pause_reason'),
     launchedBy: uuid('launched_by'),
+    executionMode: text('execution_mode'),
     nTotal: integer('n_total').notNull().default(0),
     nSent: integer('n_sent').notNull().default(0),
     nDelivered: integer('n_delivered').notNull().default(0),
@@ -412,3 +414,81 @@ export const campaigns = pgTable(
 
 export type Template = typeof templates.$inferSelect;
 export type Campaign = typeof campaigns.$inferSelect;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P5 — the sending engine (migration 0010)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const jobStatusEnum = pgEnum('job_status', [
+  'pending',
+  'claimed',
+  'sent',
+  'delivered',
+  'bounced',
+  'complained',
+  'failed',
+  'suppressed',
+  'skipped',
+  'cancelled',
+  'send_uncertain',
+]);
+
+export const attemptStateEnum = pgEnum('attempt_state', ['dispatched', 'accepted', 'rejected', 'unknown']);
+
+export const emailJobs = pgTable(
+  'email_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').notNull(),
+    campaignId: uuid('campaign_id').notNull(),
+    contactId: uuid('contact_id'),
+    toEmail: text('to_email').notNull(),
+    mergeData: jsonb('merge_data').notNull().default({}),
+    status: jobStatusEnum('status').notNull().default('pending'),
+    attempts: smallint('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    providerMessageId: text('provider_message_id'),
+    lastErrorClass: text('last_error_class'),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
+  },
+  (table) => [
+    unique('uq_email_jobs_campaign_contact').on(table.campaignId, table.contactId),
+    unique('uq_email_jobs_campaign_email').on(table.campaignId, table.toEmail),
+    index('ix_email_jobs_campaign_status').on(table.campaignId, table.status),
+  ],
+);
+
+export const sendAttempts = pgTable(
+  'send_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').notNull(),
+    jobId: uuid('job_id').notNull(),
+    attemptNo: smallint('attempt_no').notNull(),
+    mode: text('mode').notNull(),
+    state: attemptStateEnum('state').notNull().default('dispatched'),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    providerMessageId: text('provider_message_id'),
+    errorClass: text('error_class'),
+    errorCode: text('error_code'),
+  },
+  (table) => [unique('uq_attempt').on(table.jobId, table.attemptNo)],
+);
+
+export const rateLedger = pgTable(
+  'rate_ledger',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    reserved: integer('reserved').notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.windowStart] })],
+);
+
+export type EmailJob = typeof emailJobs.$inferSelect;
+export type SendAttempt = typeof sendAttempts.$inferSelect;

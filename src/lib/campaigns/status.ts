@@ -10,27 +10,25 @@
  * transition for transition, so a change to one without the other fails the
  * build.
  *
- * ── Why the vocabulary is larger than the machine ────────────────────────
- *
- * `CAMPAIGN_STATUSES` carries the full P5 set, because the enum in the database
- * does: fixing an enum now costs nothing, and migrating one under live data
- * costs a maintenance window. `TRANSITIONS` carries only what P4 can honestly
- * perform. The gap between the two is the "no sending" guarantee expressed as a
- * state machine:
+ * ── The machine, as of P5 ──────────────────────────────────────────────
  *
  *      draft ──preflight──▶ validating ──passes──▶ scheduled
- *        ▲                      │                      │
- *        └───────fails──────────┘                      │
- *        └────────────────unschedule───────────────────┘
+ *        ▲                      │                      │ time arrives, preflight re-runs (worker)
+ *        └───────fails──────────┘                      ▼
+ *        ▲                                  queued ──jobs created──▶ sending ──▶ completed | failed
+ *        │                                                            │  ▲
+ *        │                                                pause/halt  ▼  │ resume (preflight re-runs)
+ *        └──── unschedule (never launched only) ◀──────────────────  paused
  *
- *   ... and nothing leaves `scheduled` except back to `draft` or to `cancelled`.
- *   `queued`, `sending`, `paused`, `completed` and `failed` have no inbound
- *   transition at all, so no campaign can hold one.
+ *   Every non-terminal state may also be cancelled. A scheduled campaign whose
+ *   time was missed by more than the grace window goes to `paused`, never to
+ *   `queued` (ADR-0002 §5.1).
  *
- * A scheduled campaign whose time arrives therefore does nothing. There is no
- * promotion sweep, no `pg_cron` job, and no code path that could start one —
- * ARCHITECTURE §12's scheduler is P5's, and it will arrive as a migration that
- * edits the SQL function above, which is a reviewable event.
+ * The worker performs the `scheduled → queued → sending → completed|failed`
+ * steps. People perform pause, resume, unschedule and cancel. Two transitions
+ * depend on whether the campaign ever launched, which a status pair cannot
+ * express, so the database trigger checks them: `paused → draft` only for a
+ * campaign that never launched, `paused → sending` only for one that did.
  *
  * Deliberately free of `server-only`: the UI renders these labels, and a client
  * that believed in a transition the server refuses would show buttons that
@@ -58,27 +56,17 @@ export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 export const TRANSITIONS: Readonly<Record<CampaignStatus, readonly CampaignStatus[]>> = {
   draft: ['validating', 'cancelled'],
   validating: ['scheduled', 'draft', 'cancelled'],
-  scheduled: ['draft', 'cancelled'],
-  // P5 territory. Unreachable, and therefore with nowhere to go.
-  queued: [],
-  sending: [],
-  paused: [],
+  scheduled: ['draft', 'cancelled', 'queued', 'paused'],
+  queued: ['sending', 'failed', 'cancelled'],
+  sending: ['completed', 'failed', 'paused', 'cancelled'],
+  paused: ['sending', 'draft', 'cancelled'],
   completed: [],
   cancelled: [],
   failed: [],
 };
 
-/**
- * Statuses that no transition leads to.
- *
- * Asserted by tests/no-sending.test.ts, which is the point: if a future edit
- * gives any of these an inbound edge, the "no sending" suite fails rather than
- * the change passing review unremarked.
- */
-export const UNREACHABLE_STATUSES: readonly CampaignStatus[] = CAMPAIGN_STATUSES.filter(
-  (status) =>
-    status !== 'draft' && !Object.values(TRANSITIONS).some((targets) => targets.includes(status)),
-);
+/** No transition leaves these. Re-sending means a new campaign and a new audit trail. */
+export const TERMINAL_STATUSES: readonly CampaignStatus[] = ['completed', 'cancelled', 'failed'];
 
 export function canTransition(from: CampaignStatus, to: CampaignStatus): boolean {
   return TRANSITIONS[from].includes(to);
@@ -119,11 +107,20 @@ export const STATUS_TONE: Record<CampaignStatus, 'neutral' | 'positive' | 'warni
   failed: 'danger',
 };
 
-/**
- * What a scheduled campaign will do when its time arrives, said plainly.
- *
- * Shown wherever a schedule is displayed. A person who schedules something and
- * is not told it will not send would reasonably assume it did.
- */
-export const SCHEDULED_INERT_NOTICE =
-  'Scheduling saves the campaign and freezes its content. This deployment cannot send email yet, so nothing will be delivered when the scheduled time arrives.';
+/** Human-readable pause reasons. Unknown reasons fall back to the raw code. */
+export const PAUSE_REASON_LABEL: Record<string, string> = {
+  missed_schedule:
+    'The scheduled time passed while the service was unavailable. It has not been sent. Review it and schedule it again when ready.',
+  paused_by_user: 'Paused by a member of this workspace.',
+  provider_halt: 'Amazon SES refused to send for this account. Sending stopped automatically; check the account before resuming.',
+  sender_not_ready: 'The sender address stopped passing verification. Sending stopped automatically.',
+  unsubscribe_unavailable: 'Unsubscribe links could not be signed. Sending stopped automatically.',
+};
+
+export function pauseReasonLabel(reason: string | null): string | null {
+  if (reason === null) return null;
+  if (reason.startsWith('preflight_failed')) {
+    return 'The final check before sending failed, so the campaign did not start. Unschedule it, fix the problem, and schedule it again.';
+  }
+  return PAUSE_REASON_LABEL[reason] ?? reason;
+}

@@ -16,7 +16,7 @@ import { normalizeDomainName } from '../../domain-name';
  * into the path.
  *
  * SESv2's send operation is `POST /v2/email/outbound-emails`. It is absent, and
- * tests/no-sending.test.ts asserts that no path in this file matches it.
+ * tests/sending-gates.test.ts asserts that no path in this file matches it.
  *
  * ── SSRF ──────────────────────────────────────────────────────────────────
  *

@@ -23,6 +23,11 @@ Multi-tenant email campaign platform — Next.js + Supabase + Amazon SES
 >   amends §12.1, §12.5 and §25.2. The claim that per-minute cron prevents free-tier auto-pause is
 >   **withdrawn**; scheduling, queue processing and project availability are now treated as separate
 >   concerns with an explicit recovery model.
+> - [**ADR-0003 — Sending engine: implementation decisions**](docs/adr/0003-sending-engine-implementation.md)
+>   records how P5 was built and where it departs from this document: `email_jobs` is the queue
+>   (not pgmq), the cron schedule is operator-applied rather than a migration, sending is `disabled`
+>   by default, unsubscribe GET confirms rather than suppresses, and account-level SES errors halt
+>   rather than fail jobs.
 
 ---
 

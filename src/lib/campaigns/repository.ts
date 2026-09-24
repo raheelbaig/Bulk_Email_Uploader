@@ -42,7 +42,7 @@ import type { CampaignStatus } from './status';
 const COLUMNS =
   'id, workspace_id, name, status, template_id, sender_identity_id, list_id, ' +
   'template_snapshot, scheduled_at, launched_at, completed_at, requires_unsubscribe, ' +
-  'max_rate_override, pause_reason, launched_by, n_total, n_sent, n_delivered, ' +
+  'max_rate_override, pause_reason, launched_by, execution_mode, n_total, n_sent, n_delivered, ' +
   'n_bounced, n_complained, n_failed, n_unsubscribed, n_suppressed, created_at, updated_at';
 
 const LIST_COLUMNS = 'id, name, contact_count';

@@ -65,20 +65,26 @@ export const AUDIT_ACTIONS = [
   'campaign.unscheduled',
   'campaign.preflight_passed',
   'campaign.preflight_failed',
-  // reserved for later phases — named now, unused until then
+  'campaign.cancelled',
+  'suppression.added_manual',
+  'suppression.removed',
+  // the sending engine (P5)
   'campaign.launched',
   'campaign.paused',
   'campaign.resumed',
-  'campaign.cancelled',
   'campaign.missed_schedule',
-  'suppression.added_manual',
-  'suppression.removed',
+  'campaign.completed',
+  'campaign.failed',
+  'policy.auto_paused',
+  'send.uncertain_held',
+  'send.uncertain_redispatched',
+  'send.uncertain_left',
+  'suppression.unsubscribed',
+  // reserved for later phases — named now, unused until then
   'suppression.auto',
   'policy.rate_changed',
   'policy.health_state_changed',
-  'policy.auto_paused',
   'test_send.dispatched',
-  'send.uncertain_redispatched',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

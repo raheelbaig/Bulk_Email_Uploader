@@ -166,7 +166,7 @@ export function fakeProvider(options: { region?: string } = {}): FakeProvider {
     async getSendingLimits(): Promise<ProviderSendingLimits> {
       calls.push('getSendingLimits');
       takeFailure('getSendingLimits');
-      return { sandbox: true, sendingEnabled: true, max24HourSend: 200, maxSendRate: 1 };
+      return { sandbox: true, sendingEnabled: true, max24HourSend: 200, maxSendRate: 1, sentLast24Hours: 0 };
     },
   };
 }

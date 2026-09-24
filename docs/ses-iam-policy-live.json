@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "Least-privilege IAM policy for LIVE sending (P5). DO NOT ATTACH until the",
+    "sending domain is verified in SES, its DNS is confirmed, and a dry run has",
+    "completed cleanly. Until then keep docs/ses-iam-policy.json attached, which",
+    "explicitly denies every send action.",
+    "",
+    "It adds exactly one permission to the P3 policy: ses:SendEmail, and only",
+    "  - for the one verified sending domain identity,",
+    "  - through the one configuration set (without which SES emits no events),",
+    "  - from an address on that domain (ses:FromAddress condition).",
+    "Raw, bulk and templated sends stay denied: the application uses Simple",
+    "content only, so a credential that can do more is a credential whose leak",
+    "can do more. Identity deletion stays denied for the reasons in the P3 policy.",
+    "",
+    "This policy governs OUTBOUND mail only. It grants nothing related to",
+    "receiving, and inbound mail for the domain stays with the existing provider",
+    "and its MX records, which this application never reads or changes.",
+    "",
+    "Replace <region>, <account-id>, <sending-domain> and <configuration-set>."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SenderIdentityConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "ses:CreateEmailIdentity",
+        "ses:GetEmailIdentity",
+        "ses:PutEmailIdentityMailFromAttributes"
+      ],
+      "Resource": "arn:aws:ses:<region>:<account-id>:identity/*"
+    },
+    {
+      "Sid": "AccountPostureReadOnly",
+      "Effect": "Allow",
+      "Action": ["ses:GetAccount"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SendThroughOneIdentityAndConfigurationSet",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail"],
+      "Resource": [
+        "arn:aws:ses:<region>:<account-id>:identity/<sending-domain>",
+        "arn:aws:ses:<region>:<account-id>:configuration-set/<configuration-set>"
+      ],
+      "Condition": {
+        "StringLike": { "ses:FromAddress": "*@<sending-domain>" }
+      }
+    },
+    {
+      "Sid": "NothingElse",
+      "Effect": "Deny",
+      "Action": [
+        "ses:SendRawEmail",
+        "ses:SendBulkEmail",
+        "ses:SendTemplatedEmail",
+        "ses:DeleteEmailIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

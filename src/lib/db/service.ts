@@ -39,6 +39,9 @@ export const TENANT_COLUMN = {
   sender_identities: 'workspace_id',
   templates: 'workspace_id',
   campaigns: 'workspace_id',
+  email_jobs: 'workspace_id',
+  send_attempts: 'workspace_id',
+  rate_ledger: 'workspace_id',
 } as const satisfies Record<string, string>;
 
 /**
@@ -130,7 +133,14 @@ export function serviceForWorkspace(workspaceId: string) {
      * refused by the database rather than trusted from this layer.
      */
     rpc(
-      fn: 'import_upsert_contacts' | 'consume_rate_limit' | 'campaign_audience_counts',
+      fn:
+        | 'import_upsert_contacts'
+        | 'consume_rate_limit'
+        | 'campaign_audience_counts'
+        // P5: each takes the workspace and re-checks it against the row it touches.
+        | 'campaign_delivery_counts'
+        | 'sending_resolve_uncertain'
+        | 'sending_record_unsubscribe',
       args: Record<string, unknown>,
     ) {
       return db.rpc(fn, args);

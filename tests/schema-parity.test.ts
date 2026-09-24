@@ -18,6 +18,9 @@ import {
   senderIdentities,
   templates,
   campaigns,
+  emailJobs,
+  sendAttempts,
+  rateLedger,
 } from '@/lib/db/schema';
 
 /**
@@ -55,6 +58,9 @@ describe('Drizzle ↔ SQL schema parity', () => {
     senderIdentities,
     templates,
     campaigns,
+    emailJobs,
+    sendAttempts,
+    rateLedger,
   ];
 
   it.each(tables.map((t) => [getTableConfig(t).name, t] as const))(

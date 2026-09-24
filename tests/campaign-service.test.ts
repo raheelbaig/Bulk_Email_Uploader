@@ -52,6 +52,16 @@ let senderReadiness: SenderReadiness = {
   domainReadiness: 'VERIFIED',
 };
 
+/**
+ * P5: the deployment's sending facts. Unsubscribe is enforced, so the default
+ * here is a deployment that can sign unsubscribe links; one test turns it off.
+ */
+let unsubscribeAvailable = true;
+vi.mock('@/lib/sending/config', () => ({
+  unsubscribeMechanismAvailable: () => unsubscribeAvailable,
+  sendingConfig: () => ({ mode: 'disabled' }),
+}));
+
 vi.mock('@/lib/sender/identities', () => ({
   getSenderReadiness: async () => senderReadiness,
 }));
@@ -458,6 +468,17 @@ describe('campaign and template services', () => {
       const campaign = await createCampaign(ws(), { name: 'Not ready' });
       await expect(scheduleCampaign(ws(), campaign.id)).rejects.toThrow(/not ready to be scheduled/i);
       expect(await campaignStatus(db, campaign.id)).toBe('draft');
+    });
+
+    it('refuses to schedule when unsubscribe links cannot be signed (P5 enforcement)', async () => {
+      const { campaignId } = await readyCampaign();
+      unsubscribeAvailable = false;
+      try {
+        await expect(scheduleCampaign(ws(), campaignId)).rejects.toThrow(/unsubscribe/i);
+        expect(await campaignStatus(db, campaignId)).toBe('draft');
+      } finally {
+        unsubscribeAvailable = true;
+      }
     });
 
     it('a later template edit does not change the frozen copy', async () => {

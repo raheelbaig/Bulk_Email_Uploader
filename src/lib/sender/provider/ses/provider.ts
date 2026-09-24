@@ -189,6 +189,7 @@ export function createSesProvider(options: SesProviderOptions): EmailProvider {
       const quota = asRecord(response['SendQuota']);
       const max24 = quota['Max24HourSend'];
       const rate = quota['MaxSendRate'];
+      const sent = quota['SentLast24Hours'];
       return {
         // Absent means the account is out of the sandbox on some API versions;
         // the conservative reading is that a missing field is not proof of
@@ -197,6 +198,7 @@ export function createSesProvider(options: SesProviderOptions): EmailProvider {
         sendingEnabled: response['SendingEnabled'] === true,
         max24HourSend: typeof max24 === 'number' ? max24 : null,
         maxSendRate: typeof rate === 'number' ? rate : null,
+        sentLast24Hours: typeof sent === 'number' ? sent : null,
       };
     },
   };

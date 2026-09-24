@@ -51,6 +51,7 @@ function campaign(overrides: Partial<CampaignRecord> = {}): CampaignRecord {
     max_rate_override: null,
     pause_reason: null,
     launched_by: null,
+    execution_mode: null,
     n_total: 0,
     n_sent: 0,
     n_delivered: 0,
@@ -117,6 +118,9 @@ function readyInput(overrides: Partial<PreflightInput> = {}): PreflightInput {
       used === null
         ? null
         : renderOf(used),
+    // P5: a deployment that can sign unsubscribe links. The cases that break
+    // this one thing are in 'the unsubscribe requirement' below.
+    unsubscribe: { mechanismAvailable: true },
     now: NOW,
     timeZone: 'UTC',
     ...overrides,
@@ -163,13 +167,22 @@ describe('a campaign with nothing wrong with it', () => {
     expect(codes(result)).toContain('schedule_time');
   });
 
-  it('says on every result that this deployment cannot send', () => {
-    // A green "Ready" badge must not be read as "mail is about to go out".
+  it('says on every result what this deployment will do with it', () => {
+    // A green "Ready" badge must not be read as "mail is about to go out" unless
+    // it is. With no mode given, the safe reading is "sending is disabled".
     const result = evaluateCampaignPreflight(readyInput());
     expect(codes(result)).toContain('sending_not_available');
     expect(
       result.info.find((issue) => issue.code === 'sending_not_available')?.message,
-    ).toMatch(/cannot deliver email/i);
+    ).toMatch(/nothing is delivered/i);
+
+    const dryRun = evaluateCampaignPreflight(readyInput({ sendingMode: 'dry_run' }));
+    expect(dryRun.info.find((issue) => issue.code === 'sending_dry_run')?.message).toMatch(
+      /no email is delivered/i,
+    );
+
+    const live = evaluateCampaignPreflight(readyInput({ sendingMode: 'live' }));
+    expect(codes(live)).toContain('sending_live');
   });
 
   it('is deterministic — the same input gives the identical result', () => {
@@ -466,41 +479,104 @@ describe('informational notices', () => {
 });
 
 describe('the unsubscribe requirement', () => {
-  it('this deployment has no unsubscribe mechanism, and does not pretend to', () => {
+  it('is enforced from P5, and an unstated mechanism is read as absent', () => {
+    // P4 left enforcement off because it could not send, and said P5 must turn it
+    // on in the same change that adds a send path. This is that change.
+    expect(UNSUBSCRIBE_ENFORCED).toBe(true);
     expect(UNSUBSCRIBE_MECHANISM_AVAILABLE).toBe(false);
-    // P4 cannot send, so a missing mechanism cannot be violated — it is stated,
-    // not enforced. P5 flips this in the same change that adds a send path.
-    expect(UNSUBSCRIBE_ENFORCED).toBe(false);
   });
 
-  it('states the requirement on every campaign that carries it', () => {
-    const result = evaluateCampaignPreflight(readyInput());
-    expect(codes(result)).toContain('unsubscribe_mechanism_unavailable');
+  it('blocks a campaign that requires unsubscribe when the mechanism is unavailable', () => {
+    const result = evaluateCampaignPreflight(readyInput({ unsubscribe: { mechanismAvailable: false } }));
+    expect(blockerCodes(result)).toEqual(['unsubscribe_mechanism_unavailable']);
+    expect(result.ready).toBe(false);
     expect(
-      result.warnings.find((issue) => issue.code === 'unsubscribe_mechanism_unavailable')?.message,
+      result.blockers.find((issue) => issue.code === 'unsubscribe_mechanism_unavailable')?.message,
     ).toMatch(/cannot be delivered/i);
   });
 
-  it('does not block at P4, because there is nothing to violate', () => {
-    const result = evaluateCampaignPreflight(readyInput());
-    expect(result.ready).toBe(true);
+  it('blocks when the caller does not say whether a mechanism exists', () => {
+    const { unsubscribe: _omitted, ...rest } = readyInput();
+    void _omitted;
+    const result = evaluateCampaignPreflight(rest);
+    expect(blockerCodes(result)).toEqual(['unsubscribe_mechanism_unavailable']);
   });
 
-  it('blocks once enforcement is turned on', () => {
-    // Proven now so the enforcing behaviour is known to work before P5 needs it.
+  it('still only warns when enforcement is explicitly turned off', () => {
     const result = evaluateCampaignPreflight(
-      readyInput({ unsubscribe: { mechanismAvailable: false, enforced: true } }),
+      readyInput({ unsubscribe: { mechanismAvailable: false, enforced: false } }),
     );
-    expect(blockerCodes(result)).toEqual(['unsubscribe_mechanism_unavailable']);
-    expect(result.ready).toBe(false);
+    expect(result.ready).toBe(true);
+    expect(result.warnings.map((issue) => issue.code)).toContain('unsubscribe_mechanism_unavailable');
   });
 
   it('says nothing once a mechanism exists', () => {
-    const result = evaluateCampaignPreflight(
-      readyInput({ unsubscribe: { mechanismAvailable: true, enforced: true } }),
-    );
+    const result = evaluateCampaignPreflight(readyInput({ unsubscribe: { mechanismAvailable: true } }));
     expect(codes(result)).not.toContain('unsubscribe_mechanism_unavailable');
     expect(result.ready).toBe(true);
+  });
+
+  it('does not require a mechanism for a campaign marked as not needing one', () => {
+    const result = evaluateCampaignPreflight(
+      readyInput({
+        campaign: campaign({ requires_unsubscribe: false }),
+        unsubscribe: { mechanismAvailable: false },
+      }),
+    );
+    expect(result.ready).toBe(true);
+  });
+});
+
+describe('the launch intent (P5)', () => {
+  const SNAPSHOT: TemplateSnapshot = {
+    template_id: TEMPLATE_ID,
+    version: 3,
+    name: 'Newsletter',
+    subject: 'Hello {{first_name}}',
+    preview_text: null,
+    html: '<p>Hello {{first_name}}</p>',
+    text: 'Hello {{first_name}}',
+    variables: ['first_name'],
+    frozen_at: '2026-02-20T00:00:00.000Z',
+  };
+
+  const launchInput = (overrides: Partial<PreflightInput> = {}): PreflightInput =>
+    readyInput({
+      intent: 'launch',
+      campaign: campaign({ status: 'scheduled', scheduled_at: '2026-02-01T09:00:00.000Z' }),
+      snapshot: SNAPSHOT,
+      ...overrides,
+    });
+
+  it('accepts a due scheduled campaign — a past schedule is the point, not a blocker', () => {
+    const result = evaluateCampaignPreflight(launchInput());
+    expect(result.ready).toBe(true);
+    expect(codes(result)).not.toContain('schedule_in_past');
+    expect(codes(result)).not.toContain('campaign_not_editable');
+  });
+
+  it('refuses a campaign with no frozen content', () => {
+    const result = evaluateCampaignPreflight(launchInput({ snapshot: null }));
+    expect(blockerCodes(result)).toEqual(['template_snapshot_missing']);
+  });
+
+  it('refuses a campaign that is not scheduled or paused', () => {
+    const result = evaluateCampaignPreflight(launchInput({ campaign: campaign({ status: 'draft' }) }));
+    expect(blockerCodes(result)).toContain('campaign_not_launchable');
+  });
+
+  it('still refuses a sender that lost verification since scheduling', () => {
+    const result = evaluateCampaignPreflight(
+      launchInput({
+        senderReadiness: { ready: false, blockers: ['dkim_not_verified'], warnings: [], domainReadiness: 'PENDING' },
+      }),
+    );
+    expect(blockerCodes(result)).toEqual(['sender_dkim_not_verified']);
+  });
+
+  it('still enforces unsubscribe', () => {
+    const result = evaluateCampaignPreflight(launchInput({ unsubscribe: { mechanismAvailable: false } }));
+    expect(blockerCodes(result)).toEqual(['unsubscribe_mechanism_unavailable']);
   });
 });
 

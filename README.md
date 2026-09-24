@@ -2,21 +2,21 @@
 
 Email campaign and bulk sending platform.
 
-> ## There is no live sending path.
+> ## Sending is built, and off by default.
 >
-> This deployment is at **P3 — sender domains and identities**. There is an
-> audience, a suppression list, a way to fill both from a spreadsheet, and now
-> verified sending domains — the *permission* to send, with still no way to act
-> on it. There is no send call, no SMTP, no email queue, no worker, no send
-> endpoint and no campaign model.
+> This deployment is at **P5 — the sending engine**. Campaigns can be delivered
+> through Amazon SES (outbound only), but nothing is sent unless an operator
+> deliberately turns it on:
 >
-> P3 talks to Amazon SES for the first time, for identity configuration only.
-> The AWS SDK is deliberately not installed (it ships `SendEmailCommand` beside
-> the identity APIs); four requests are signed by hand against a closed
-> operation allowlist, and the documented IAM policy denies `ses:SendEmail`
-> outright. No code path in this repository can put a message into anyone's
-> inbox, and `tests/no-sending.test.ts` fails the build if that changes.
-> See [Why sending is impossible](#why-sending-is-impossible-right-now).
+> - `EMAIL_SENDING_MODE` defaults to `disabled`, in which the worker does nothing.
+> - `dry_run` runs the entire pipeline against a sink that delivers nothing.
+> - `live` also needs a configuration set, signing secrets and an https app URL,
+>   and the documented IAM policy still **denies** `ses:SendEmail` until the
+>   separate live policy is attached.
+>
+> The application never reads or changes MX records; inbound mail stays with
+> its existing provider. `tests/sending-gates.test.ts` fails the build if any of
+> this changes. See [How sending is gated](#how-sending-is-gated).
 
 ## Documents
 
@@ -25,6 +25,7 @@ Email campaign and bulk sending platform.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | The blueprint. Source of truth for schema and design decisions. |
 | [`docs/adr/0001-ses-send-idempotency.md`](docs/adr/0001-ses-send-idempotency.md) | The SES crash window: what is and is not guaranteed, and why the system fails closed. Supersedes §13.4. |
 | [`docs/adr/0002-availability-and-recovery.md`](docs/adr/0002-availability-and-recovery.md) | Scheduling, availability and recovery. Withdraws the free-tier keep-alive claim. |
+| [`docs/adr/0003-sending-engine-implementation.md`](docs/adr/0003-sending-engine-implementation.md) | P5: where the sending engine departs from the blueprint, and what still needs external configuration. |
 
 ## Stack
 
@@ -40,9 +41,19 @@ pnpm db:migrate                # applies supabase/migrations in order
 pnpm dev
 ```
 
-`pnpm db:migrate` needs `DATABASE_URL`. Migrations are plain SQL applied in
-filename order and recorded with a checksum; editing an applied migration is a
-hard error, because it would let two environments diverge silently.
+`pnpm db:migrate` needs `DATABASE_URL` (from the environment, else `.env.local`).
+Migrations are plain SQL applied in filename order, one transaction each, and
+recorded with a checksum in `public.schema_migrations` (RLS on, no API-role
+privileges); editing an applied migration is a hard error, because it would let
+two environments diverge silently. Checksums ignore CRLF vs LF.
+
+```bash
+pnpm db:migrate --dry-run          # list pending migrations; read-only, changes nothing
+pnpm db:migrate --yes-production   # required for any non-localhost database
+```
+
+Only the host, port and database name are printed. Concurrent runs are
+serialised with a Postgres advisory lock.
 
 ## Commands
 
@@ -158,63 +169,42 @@ DNS what is actually true.
 | Readiness | One authority, `lib/sender/readiness.ts`. P4's campaign preflight must call it rather than reading status columns, for the same reason nothing but `lib/eligibility` may query `suppressions`. |
 | Transient faults | A DNS lookup that fails carries the previous status forward; a lookup that succeeds and finds nothing downgrades it. A resolver timeout must not take a verified domain out of service. |
 
-## Why sending is impossible right now
+## How sending is gated
 
-Not by configuration or a feature flag. P3 introduced an `EmailProvider` port
-and an SES adapter, so "no provider exists" is no longer the reason — these
-four are:
+P5 adds exactly one way for a message to leave: the worker endpoint
+(`POST /api/internal/worker/tick`, HMAC-signed, called by pg_cron) runs
+`lib/sending/worker.ts`, which hands messages to the provider chosen by
+`lib/sending/provider/index.ts`. Each of these layers is independently
+sufficient to stop a send:
 
-1. **No SDK.** `@aws-sdk/client-sesv2` ships `SendEmailCommand` in the same
-   package as the identity APIs. The four requests P3 needs are signed by hand
-   (`src/lib/sender/provider/ses/sigv4.ts`, ~100 lines of SigV4 over
-   `node:crypto`), so no send-capable code is present to be called.
-2. **A closed operation allowlist.** The SES client can issue exactly four
-   requests — create identity, get identity, put MAIL FROM attributes, get
-   account. SESv2's send operation, `POST /v2/email/outbound-emails`, is absent,
-   and a test enumerates every path literal in the file to prove it.
-3. **A port with nowhere to put a message.** `EmailProvider` declares four
-   configuration methods. A test asserts no type in it mentions a recipient, a
-   subject or a body.
-4. **An IAM policy that denies it.** `docs/ses-iam-policy.json` grants three
-   identity actions and `ses:GetAccount`, and explicitly denies `ses:SendEmail`,
-   `ses:SendRawEmail` and `ses:DeleteEmailIdentity`. A leaked P3 credential
-   cannot send, and cannot destroy an identity either.
+1. **Mode.** `EMAIL_SENDING_MODE=disabled` (the default) makes every tick a
+   no-op. `dry_run` uses a provider that performs no I/O at all.
+2. **The live gate.** `live` also requires AWS credentials,
+   `AWS_SES_CONFIGURATION_SET`, `UNSUBSCRIBE_SECRET_V1`, `WORKER_HMAC_SECRET`
+   and an https `NEXT_PUBLIC_APP_URL`, re-checked on every tick.
+3. **IAM.** `docs/ses-iam-policy.json` still explicitly denies `ses:SendEmail`.
+   `docs/ses-iam-policy-live.json` — SendEmail only, one identity, one
+   configuration set — is attached by an operator once DNS is confirmed.
+4. **No clock by default.** The pg_cron schedule is
+   `supabase/ops/p5_schedule.sql`, applied by hand; no migration schedules
+   anything.
+5. **Per campaign.** Preflight runs again when a campaign becomes due and on
+   resume; sender readiness and the unsubscribe mechanism are re-checked on
+   every tick. An unverified sender cannot launch.
 
-And, as before, by absence:
+Still true from earlier phases: no email SDK, SMTP library or external queue is
+installed. `SendEmail` is one hand-signed request in one file
+(`lib/sending/provider/ses-send-client.ts`); P3's configuration client keeps its
+closed four-operation allowlist. Exactly two modules make outbound calls, both to
+the fixed regional SES host with redirects refused.
 
-- No mail library or queue dependency is installed.
-- No email queue: pgmq is not enabled. The one queue that exists, `import_jobs`,
-  carries an import id and nothing that could address a recipient — no message,
-  no subject, no destination — and a test asserts those columns stay absent.
-- No scheduler: `pg_cron` and `pg_net` are not enabled. The only extension is
-  `pg_trgm`, for contact search.
-- No `email_jobs`, `send_attempts`, `campaigns`, `templates` or `email_events`
-  tables exist.
-- No worker route, and no internal endpoint of any kind. Periodic
-  re-verification exists as a *service* (`verifyDueSenderDomains`) with no HTTP
-  entry point: the authenticated worker surface it would need belongs to P5.
-- Exactly one source file calls `fetch()` — the SES configuration client —
-  against a fixed `email.<region>.amazonaws.com` host, with redirects refused.
-  A second call site anywhere fails the build.
-- Domain ownership is proven by DNS lookups and by asking SES. Nothing requests
-  a user-supplied domain over HTTP, so there is no SSRF surface; no module under
-  `src/lib/sender/` may even construct a URL.
-- Two API routes exist: `/api/health`, which returns `{"status":"ok"}`, and
-  `/api/imports/[id]/rejections`, which is `GET`-only and returns a CSV of rows
-  that failed to import. Both are asserted by name.
-- Nothing under `src/lib/imports/` calls a function named `send*` or
-  `dispatch*`, or mentions SMTP or SES.
+**Idempotency** (ADR-0001) is enforced by the database, not by the worker: one
+job per recipient per campaign, at most one accepted attempt per job, at most
+one attempt in flight, an attempt row committed before every provider call, and
+unconfirmed outcomes held as `send_uncertain` — never retried automatically.
 
-AWS credentials are optional: with none set the application runs normally and
-the sender pages report that the provider is not configured. They are named in
-exactly two modules — `lib/env.ts`, which validates them, and
-`lib/sender/provider/index.ts`, which turns them into a provider — both
-`server-only`, neither of which logs. The later-phase secrets
-(`AWS_SES_CONFIGURATION_SET`, `AWS_SNS_TOPIC_ARN`, `WORKER_HMAC_SECRET`,
-`UNSUBSCRIBE_SECRET_V1`) are still read by nothing.
-
-Every one of these statements is asserted by `tests/no-sending.test.ts`, so the
-guarantee is checked on each build rather than restated here by hand.
+Every statement above is asserted by `tests/sending-gates.test.ts`,
+`tests/sending-worker.test.ts` and `tests/sending-db.test.ts`.
 
 ## Project state
 
@@ -223,8 +213,8 @@ guarantee is checked on each build rather than restated here by hand.
 | P0 — Foundation | Complete |
 | P1 — Contacts, lists and suppression | Complete |
 | P2 — Import engine | Complete |
-| P3 — Sender domains, identities and email authentication | Complete, pending review |
-| P4 — Templates, campaigns, preflight | Not started |
-| P5 — Sending engine | Not started |
-| P6 — Events, bounces, unsubscribe | Not started |
+| P3 — Sender domains, identities and email authentication | Complete |
+| P4 — Templates, campaigns, preflight | Complete |
+| P5 — Sending engine | Complete, pending review. Off by default; see ADR-0003 §4 for the external setup before live use |
+| P6 — Events, bounces, unsubscribe | Not started (unsubscribe links and one-click were built in P5) |
 | P7 — Health, analytics, hardening | Not started |
