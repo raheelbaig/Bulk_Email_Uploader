@@ -21,6 +21,7 @@ import type { TemplateSnapshot } from '@/lib/campaigns/snapshot';
 describe('the live gate', () => {
   const open: LiveGateInput = {
     mode: 'live',
+    appEnvironment: 'production',
     hasProviderCredentials: true,
     hasConfigurationSet: true,
     hasUnsubscribeSecret: true,
@@ -34,6 +35,8 @@ describe('the live gate', () => {
 
   it.each([
     ['mode_is_live', { mode: 'dry_run' as const }],
+    ['production_environment', { appEnvironment: 'development' as const }],
+    ['production_environment', { appEnvironment: 'development' as const }],
     ['provider_credentials', { hasProviderCredentials: false }],
     ['configuration_set', { hasConfigurationSet: false }],
     ['unsubscribe_secret', { hasUnsubscribeSecret: false }],
@@ -50,13 +53,14 @@ describe('the live gate', () => {
   it('names every unmet requirement, never a value', () => {
     const verdict = evaluateLiveGate({
       mode: 'disabled',
+      appEnvironment: 'development',
       hasProviderCredentials: false,
       hasConfigurationSet: false,
       hasUnsubscribeSecret: false,
       hasWorkerSecret: false,
       appUrl: 'http://localhost:3000',
     });
-    expect(verdict.unmet).toHaveLength(6);
+    expect(verdict.unmet).toHaveLength(7);
   });
 });
 
@@ -160,6 +164,7 @@ function composeInput(overrides: Partial<ComposeInput> = {}): ComposeInput {
     sender: { fromEmail: 'news@acme.test', fromName: 'Acme', replyTo: 'hello@acme.test' },
     requiresUnsubscribe: true,
     unsubscribeUrl: 'https://mail.example.com/u/abc.def',
+    postalAddress: 'QA Test Co.',
     tags: { job_id: 'j1', attempt_no: '1' },
     ...overrides,
   };

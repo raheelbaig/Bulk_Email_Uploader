@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Search, UserPlus } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import {
   listContacts,
   CONTACT_STATUSES,
@@ -41,7 +41,7 @@ export default async function ContactsPage({
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   };
 
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
 
   const search = one('q');
   const status = asStatus(one('status'));
@@ -61,7 +61,7 @@ export default async function ContactsPage({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             People you can email from this workspace.
           </p>
         </div>
@@ -88,12 +88,12 @@ export default async function ContactsPage({
 
       <form method="get" className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="q" className="text-xs font-medium text-[--color-muted-foreground]">
+          <label htmlFor="q" className="text-xs font-medium text-(--color-muted-foreground)">
             Search
           </label>
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-[--color-muted-foreground]"
+              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-(--color-muted-foreground)"
               aria-hidden
             />
             <Input
@@ -106,7 +106,7 @@ export default async function ContactsPage({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="status" className="text-xs font-medium text-[--color-muted-foreground]">
+          <label htmlFor="status" className="text-xs font-medium text-(--color-muted-foreground)">
             Status
           </label>
           <Select id="status" name="status" defaultValue={status ?? ''}>
@@ -129,7 +129,7 @@ export default async function ContactsPage({
       </form>
 
       {searchTooShort && (
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Type at least {MIN_SEARCH_LENGTH} characters to search. Showing all contacts.
         </p>
       )}
@@ -164,7 +164,7 @@ export default async function ContactsPage({
                     <TD>
                       <Badge tone={STATUS_TONE[contact.status]}>{contact.status}</Badge>
                     </TD>
-                    <TD className="whitespace-nowrap text-[--color-muted-foreground]">
+                    <TD className="whitespace-nowrap text-(--color-muted-foreground)">
                       {new Date(contact.created_at).toLocaleDateString()}
                     </TD>
                     <TD className="text-right">
@@ -195,5 +195,5 @@ export default async function ContactsPage({
 }
 
 function Muted({ children }: { children: React.ReactNode }) {
-  return <span className="text-[--color-muted-foreground]">{children}</span>;
+  return <span className="text-(--color-muted-foreground)">{children}</span>;
 }

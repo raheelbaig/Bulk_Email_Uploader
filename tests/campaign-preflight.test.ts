@@ -52,6 +52,7 @@ function campaign(overrides: Partial<CampaignRecord> = {}): CampaignRecord {
     pause_reason: null,
     launched_by: null,
     execution_mode: null,
+    approved_send_mode: null,
     n_total: 0,
     n_sent: 0,
     n_delivered: 0,
@@ -121,6 +122,8 @@ function readyInput(overrides: Partial<PreflightInput> = {}): PreflightInput {
     // P5: a deployment that can sign unsubscribe links. The cases that break
     // this one thing are in 'the unsubscribe requirement' below.
     unsubscribe: { mechanismAvailable: true },
+    // Migration 0014: a workspace with a footer address. Clearly fake.
+    footer: { postalAddress: 'QA Test Co., 1 Example Street, Testville' },
     now: NOW,
     timeZone: 'UTC',
     ...overrides,
@@ -461,11 +464,14 @@ describe('informational notices', () => {
     expect(result.info.map((issue) => issue.code)).toContain('personalization_none');
   });
 
-  it('a campaign that opts out of unsubscribe says so explicitly', () => {
+  it('a campaign that opts out of unsubscribe is warned, not merely informed', () => {
     const result = evaluateCampaignPreflight(
       readyInput({ campaign: campaign({ requires_unsubscribe: false }) }),
     );
-    expect(result.info.map((issue) => issue.code)).toContain('unsubscribe_not_required');
+    // A warning: opting out of unsubscribe is a deliverability risk a person
+    // must see, and still their decision for genuinely transactional mail.
+    expect(result.warnings.map((issue) => issue.code)).toContain('unsubscribe_not_required');
+    expect(result.info.map((issue) => issue.code)).not.toContain('unsubscribe_not_required');
     expect(result.ready).toBe(true);
   });
 

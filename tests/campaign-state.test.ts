@@ -149,7 +149,8 @@ describe('campaign state machine', () => {
       );
       await setStatus(id, 'validating');
       await db.raw(
-        `update campaigns set status = 'scheduled', template_snapshot = '{"frozen": true}'::jsonb where id = $1`,
+        `update campaigns set status = 'scheduled', template_snapshot = '{"frozen": true}'::jsonb,
+                              approved_send_mode = 'dry_run' where id = $1`,
         [id],
       );
       return id;

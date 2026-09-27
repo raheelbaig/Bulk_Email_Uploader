@@ -135,6 +135,8 @@ export type PreflightCode =
   // unsubscribe
   | 'unsubscribe_mechanism_unavailable'
   | 'unsubscribe_not_required'
+  // footer (migration 0014)
+  | 'postal_address_missing'
   // schedule
   | 'schedule_missing'
   | 'schedule_invalid'
@@ -207,6 +209,13 @@ export interface PreflightInput {
     /** Injected so both settings stay provable. Defaults to UNSUBSCRIBE_ENFORCED. */
     enforced?: boolean;
   };
+
+  /**
+   * The workspace's postal address, appended to the footer of every message of a
+   * campaign that requires unsubscribe. Omitted is read as "not configured",
+   * which blocks — the same fail-closed default as the unsubscribe mechanism.
+   */
+  footer?: { postalAddress: string | null };
 
   /** The deployment's sending mode, so the verdict can say what will happen. */
   sendingMode?: SendingMode;
@@ -524,6 +533,17 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
 
   // ── Unsubscribe ─────────────────────────────────────────────────────────
   if (input.campaign.requires_unsubscribe) {
+    const postalAddress = input.footer?.postalAddress ?? null;
+    if (postalAddress === null || postalAddress.trim().length === 0) {
+      add({
+        code: 'postal_address_missing',
+        severity: 'blocker',
+        title: 'No postal address for the footer',
+        message:
+          'Bulk email must identify the sender with a postal address, and this workspace has none configured. Every message of this campaign carries it in its footer.',
+        remediation: 'An owner or admin can add it under Settings.',
+      });
+    }
     if (!mechanismAvailable) {
       add({
         code: 'unsubscribe_mechanism_unavailable',
@@ -537,12 +557,17 @@ export function evaluateCampaignPreflight(input: PreflightInput): PreflightResul
       });
     }
   } else {
+    // A warning, not a notice: bulk mail without a one-click unsubscribe breaks
+    // Gmail's and Yahoo's bulk-sender rules and invites spam complaints, which
+    // is how a sending account gets suspended. It stays the person's call, since
+    // genuinely transactional mail does qualify — but it must not pass unseen.
     add({
       code: 'unsubscribe_not_required',
-      severity: 'info',
-      title: 'Unsubscribe not required',
+      severity: 'warning',
+      title: 'No unsubscribe link',
       message:
-        'This campaign is marked as not requiring an unsubscribe link. Only transactional mail qualifies.',
+        'This campaign is marked as not requiring an unsubscribe link, so recipients get no unsubscribe link or one-click header. Only transactional mail qualifies; sending marketing mail this way risks spam complaints and the sending account being suspended.',
+      remediation: 'Turn the unsubscribe requirement back on unless this is transactional mail.',
     });
   }
 

@@ -20,7 +20,7 @@ const TONE: Record<VerificationStatus, string> = {
   verified: 'text-emerald-600 dark:text-emerald-400',
   pending: 'text-amber-600 dark:text-amber-400',
   failed: 'text-red-600 dark:text-red-400',
-  not_configured: 'text-[--color-muted-foreground]',
+  not_configured: 'text-(--color-muted-foreground)',
 };
 
 const STATUS_LABEL: Record<VerificationStatus, string> = {
@@ -40,7 +40,7 @@ export function SenderCheck({ label, status }: CheckRow) {
   return (
     <div className="flex items-center gap-2 text-sm">
       <Icon className={`h-3.5 w-3.5 ${TONE[status]}`} aria-hidden />
-      <span className="w-24 text-[--color-muted-foreground]">{label}</span>
+      <span className="w-24 text-(--color-muted-foreground)">{label}</span>
       <span className={TONE[status]}>{STATUS_LABEL[status]}</span>
     </div>
   );

@@ -35,10 +35,10 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
 
       <div className="rounded-lg border">
         <dl className="grid gap-x-4 gap-y-1 border-b px-4 py-3 text-sm sm:grid-cols-[7rem_1fr]">
-          <dt className="text-[--color-muted-foreground]">From</dt>
+          <dt className="text-(--color-muted-foreground)">From</dt>
           <dd className="truncate">
             {preview.fromEmail === null ? (
-              <span className="text-[--color-muted-foreground]">No sender selected</span>
+              <span className="text-(--color-muted-foreground)">No sender selected</span>
             ) : (
               <>
                 {preview.fromName} &lt;{preview.fromEmail}&gt;
@@ -48,24 +48,24 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
 
           {preview.replyTo !== null && (
             <>
-              <dt className="text-[--color-muted-foreground]">Reply-to</dt>
+              <dt className="text-(--color-muted-foreground)">Reply-to</dt>
               <dd className="truncate">{preview.replyTo}</dd>
             </>
           )}
 
-          <dt className="text-[--color-muted-foreground]">To</dt>
+          <dt className="text-(--color-muted-foreground)">To</dt>
           <dd className="flex items-center gap-2 truncate">
             {preview.contactEmail}
             {preview.usedSampleContact && <Badge>sample</Badge>}
           </dd>
 
-          <dt className="text-[--color-muted-foreground]">Subject</dt>
+          <dt className="text-(--color-muted-foreground)">Subject</dt>
           <dd className="font-medium">{preview.subject}</dd>
 
           {preview.previewText !== null && (
             <>
-              <dt className="text-[--color-muted-foreground]">Preview text</dt>
-              <dd className="text-[--color-muted-foreground]">{preview.previewText}</dd>
+              <dt className="text-(--color-muted-foreground)">Preview text</dt>
+              <dd className="text-(--color-muted-foreground)">{preview.previewText}</dd>
             </>
           )}
         </dl>
@@ -83,7 +83,7 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
       </div>
 
       {preview.missing.length > 0 && (
-        <p className="text-xs text-[--color-muted-foreground]">
+        <p className="text-xs text-(--color-muted-foreground)">
           Empty for this contact: {preview.missing.join(', ')}. Recipients missing these fields will
           see a gap where the value would be.
         </p>

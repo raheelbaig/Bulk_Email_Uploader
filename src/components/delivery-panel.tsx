@@ -62,18 +62,18 @@ export function DeliveryPanel({
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-xs text-[--color-muted-foreground]">Recipients</dt>
+            <dt className="text-xs text-(--color-muted-foreground)">Recipients</dt>
             <dd className="font-medium">{summary.total.toLocaleString()}</dd>
           </div>
           {ROWS.filter((row) => summary.counts[row.key] > 0 || row.key === 'sent').map((row) => (
             <div key={row.key}>
-              <dt className="text-xs text-[--color-muted-foreground]">{row.label}</dt>
+              <dt className="text-xs text-(--color-muted-foreground)">{row.label}</dt>
               <dd>{summary.counts[row.key].toLocaleString()}</dd>
             </div>
           ))}
           {campaign.n_unsubscribed > 0 && (
             <div>
-              <dt className="text-xs text-[--color-muted-foreground]">Unsubscribed</dt>
+              <dt className="text-xs text-(--color-muted-foreground)">Unsubscribed</dt>
               <dd>{campaign.n_unsubscribed.toLocaleString()}</dd>
             </div>
           )}
@@ -87,7 +87,7 @@ export function DeliveryPanel({
         {campaign.status === 'paused' && campaign.launched_at !== null && (
           <ActionForm action={resumeAction} submitLabel="Resume sending" pendingLabel="Checking…">
             <input type="hidden" name="campaignId" value={campaign.id} />
-            <p className="text-xs text-[--color-muted-foreground]">
+            <p className="text-xs text-(--color-muted-foreground)">
               Resuming runs every check again, including sender verification.
             </p>
           </ActionForm>
@@ -100,7 +100,7 @@ export function DeliveryPanel({
                 ? '1 message could not be confirmed'
                 : `${summary.counts.send_uncertain.toLocaleString()} messages could not be confirmed`}
             </h3>
-            <p className="text-xs text-[--color-muted-foreground]">
+            <p className="text-xs text-(--color-muted-foreground)">
               We asked Amazon SES to send these but lost the connection before it confirmed. Each may or may
               not have been delivered. Sending again could mean the person receives it twice. The campaign
               finishes once every one of these has a decision.

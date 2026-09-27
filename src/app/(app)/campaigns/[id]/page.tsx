@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
+import { isAppError } from '@/lib/errors';
 import {
   buildCampaignPreview,
   listAudienceOptions,
@@ -12,7 +14,7 @@ import { formatInZone, toLocalInputValue } from '@/lib/campaigns/schedule';
 import { STATUS_LABEL, STATUS_TONE, TERMINAL_STATUSES, pauseReasonLabel } from '@/lib/campaigns/status';
 import { BLOCKER_MESSAGE } from '@/lib/sender/readiness';
 import { sendingConfig } from '@/lib/sending/config';
-import { LIVE_REQUIREMENT_MESSAGE, SENDING_MODE_NOTICE } from '@/lib/sending/gate';
+import { LIVE_REQUIREMENT_MESSAGE, SENDING_MODE_LABEL, SENDING_MODE_NOTICE } from '@/lib/sending/gate';
 import { getDeliverySummary } from '@/lib/sending/service';
 import {
   cancelCampaignAction,
@@ -69,13 +71,13 @@ function Step({
     <section className="rounded-lg border">
       <header className="border-b px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-medium">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[--color-muted] text-xs">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-(--color-muted) text-xs">
             {number}
           </span>
           {title}
         </h2>
         {description !== undefined && (
-          <p className="mt-0.5 pl-7 text-xs text-[--color-muted-foreground]">{description}</p>
+          <p className="mt-0.5 pl-7 text-xs text-(--color-muted-foreground)">{description}</p>
         )}
       </header>
       <div className="px-4 py-4">{children}</div>
@@ -92,9 +94,13 @@ export default async function CampaignPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
 
-  const { result, view } = await previewCampaignPreflight(workspaceId, id);
+  const { result, view } = await previewCampaignPreflight(workspaceId, id).catch((err: unknown) => {
+    // Absent, not-yours and malformed are the same answer: not found.
+    if (isAppError(err) && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND' || err.code === 'VALIDATION_FAILED')) notFound();
+    throw err;
+  });
   const contactParam = query['contact'];
   const contactId = typeof contactParam === 'string' ? contactParam : undefined;
 
@@ -123,7 +129,7 @@ export default async function CampaignPage({
         <div>
           <Link
             href="/campaigns"
-            className="flex items-center gap-1 text-sm text-[--color-muted-foreground]"
+            className="flex items-center gap-1 text-sm text-(--color-muted-foreground)"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             Campaigns
@@ -135,20 +141,26 @@ export default async function CampaignPage({
         </div>
         <div className="flex gap-2">
           {!TERMINAL_STATUSES.includes(view.status) && (
-            <form action={cancelCampaignAction}>
+            <ActionForm
+              action={cancelCampaignAction}
+              submitLabel="Cancel campaign"
+              pendingLabel="Cancelling…"
+              variant="outline"
+              className="flex max-w-xs flex-col items-end gap-2"
+            >
               <input type="hidden" name="campaignId" value={campaign.id} />
-              <Button type="submit" variant="outline" size="sm">
-                Cancel campaign
-              </Button>
-            </form>
+            </ActionForm>
           )}
           {!launched && (
-            <form action={deleteCampaignAction}>
+            <ActionForm
+              action={deleteCampaignAction}
+              submitLabel="Delete"
+              pendingLabel="Deleting…"
+              variant="destructive"
+              className="flex max-w-xs flex-col items-end gap-2"
+            >
               <input type="hidden" name="campaignId" value={campaign.id} />
-              <Button type="submit" variant="destructive" size="sm">
-                Delete
-              </Button>
-            </form>
+            </ActionForm>
           )}
         </div>
       </div>
@@ -157,6 +169,11 @@ export default async function CampaignPage({
         <Alert>
           This campaign is scheduled and its content is frozen. {modeNotice} Unschedule it to make
           further changes.
+          <span className="mt-2 block font-medium">
+            {campaign.approved_send_mode === null
+              ? 'It carries no sending approval and will not start. Unschedule it and schedule it again.'
+              : `Approved for: ${SENDING_MODE_LABEL[campaign.approved_send_mode]}. It starts only while this deployment is in that mode; if the mode changes it is held for you to schedule again.`}
+          </span>
         </Alert>
       )}
 
@@ -209,19 +226,19 @@ export default async function CampaignPage({
             {view.list !== null && (
               <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
                 <div>
-                  <dt className="text-xs text-[--color-muted-foreground]">In list</dt>
+                  <dt className="text-xs text-(--color-muted-foreground)">In list</dt>
                   <dd>{view.audience.total.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-[--color-muted-foreground]">Eligible</dt>
+                  <dt className="text-xs text-(--color-muted-foreground)">Eligible</dt>
                   <dd className="font-medium">{view.audience.eligible.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-[--color-muted-foreground]">Suppressed</dt>
+                  <dt className="text-xs text-(--color-muted-foreground)">Suppressed</dt>
                   <dd>{view.audience.suppressed.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-[--color-muted-foreground]">Inactive</dt>
+                  <dt className="text-xs text-(--color-muted-foreground)">Inactive</dt>
                   <dd>{view.audience.inactive.toLocaleString()}</dd>
                 </div>
               </dl>
@@ -256,7 +273,7 @@ export default async function CampaignPage({
             </ActionForm>
 
             {senders.length === 0 && (
-              <p className="mt-2 text-xs text-[--color-muted-foreground]">
+              <p className="mt-2 text-xs text-(--color-muted-foreground)">
                 No sender addresses yet.{' '}
                 <Link href="/senders" className="underline underline-offset-4">
                   Add and verify a sending domain
@@ -265,7 +282,7 @@ export default async function CampaignPage({
               </p>
             )}
             {senders.some((sender) => !sender.readiness.ready) && (
-              <ul className="mt-2 space-y-0.5 text-xs text-[--color-muted-foreground]">
+              <ul className="mt-2 space-y-0.5 text-xs text-(--color-muted-foreground)">
                 {senders
                   .filter((sender) => !sender.readiness.ready)
                   .map((sender) => (
@@ -293,7 +310,7 @@ export default async function CampaignPage({
                 ))}
               </Select>
             </ActionForm>
-            <p className="mt-2 text-xs text-[--color-muted-foreground]">
+            <p className="mt-2 text-xs text-(--color-muted-foreground)">
               <Link href="/templates" className="underline underline-offset-4">
                 Manage templates
               </Link>
@@ -307,9 +324,9 @@ export default async function CampaignPage({
             description="Fields resolve from the contact record. Unknown fields block the campaign."
           >
             {view.template === null ? (
-              <p className="text-sm text-[--color-muted-foreground]">Choose a template first.</p>
+              <p className="text-sm text-(--color-muted-foreground)">Choose a template first.</p>
             ) : view.template.variables.length === 0 ? (
-              <p className="text-sm text-[--color-muted-foreground]">
+              <p className="text-sm text-(--color-muted-foreground)">
                 This template uses no personalization — every recipient receives identical content.
               </p>
             ) : (
@@ -328,7 +345,7 @@ export default async function CampaignPage({
             description="Every check, every time. Blockers must be cleared; warnings are yours to accept."
           >
             {launched ? (
-              <p className="text-sm text-[--color-muted-foreground]">
+              <p className="text-sm text-(--color-muted-foreground)">
                 This campaign has started. Its checks ran again at launch, and run again on resume.
               </p>
             ) : (
@@ -401,7 +418,7 @@ export default async function CampaignPage({
                 </ActionForm>
               </div>
             ) : (
-              <p className="text-sm text-[--color-muted-foreground]">
+              <p className="text-sm text-(--color-muted-foreground)">
                 This campaign is {STATUS_LABEL[view.status].toLowerCase()} and cannot be scheduled.
               </p>
             )}
@@ -416,14 +433,14 @@ export default async function CampaignPage({
           </div>
 
           {preview === null ? (
-            <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-[--color-muted-foreground]">
+            <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-(--color-muted-foreground)">
               Choose a template to see the message.
             </p>
           ) : (
             <>
               {preview.contacts.length > 0 && (
                 <form method="get" className="flex items-center gap-2">
-                  <label htmlFor="contact" className="text-xs text-[--color-muted-foreground]">
+                  <label htmlFor="contact" className="text-xs text-(--color-muted-foreground)">
                     Preview as
                   </label>
                   <Select id="contact" name="contact" defaultValue={contactId ?? ''} className="flex-1">

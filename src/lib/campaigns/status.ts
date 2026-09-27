@@ -115,6 +115,17 @@ export const PAUSE_REASON_LABEL: Record<string, string> = {
   provider_halt: 'Amazon SES refused to send for this account. Sending stopped automatically; check the account before resuming.',
   sender_not_ready: 'The sender address stopped passing verification. Sending stopped automatically.',
   unsubscribe_unavailable: 'Unsubscribe links could not be signed. Sending stopped automatically.',
+  postal_address_missing:
+    'This workspace has no postal address for the email footer. Sending stopped automatically; add one under Settings.',
+  // Migration 0012: a campaign launches only in the sending mode it was approved for.
+  approved_for_disabled:
+    'This campaign was scheduled while sending was disabled, and sending has since been turned on. It was not started. Return it to draft and schedule it again to approve it for the current mode.',
+  approved_for_dry_run:
+    'This campaign was scheduled for a dry run, and the deployment is no longer in dry-run mode. It was not started. Return it to draft and schedule it again to approve it for the current mode.',
+  approved_for_live:
+    'This campaign was scheduled for live sending, and the deployment is no longer in live mode. It was not started. Return it to draft and schedule it again to approve it for the current mode.',
+  not_approved:
+    'This campaign was scheduled before sending approvals were recorded. It was not started. Return it to draft and schedule it again.',
 };
 
 export function pauseReasonLabel(reason: string | null): string | null {

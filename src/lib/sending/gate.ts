@@ -14,6 +14,7 @@
  * file and each is sufficient on its own:
  *
  *   - `EMAIL_SENDING_MODE` defaults to `disabled`.
+ *   - `APP_ENVIRONMENT` defaults to `development`; only `production` may send.
  *   - Every campaign's sender must be verified by SES and by DNS
  *     (lib/sender/readiness), re-checked at launch and on every tick.
  *   - The documented IAM policy (docs/ses-iam-policy.json) still denies
@@ -23,10 +24,13 @@
  * Deliberately free of `server-only`: pure, and the campaign page renders it.
  */
 
+import type { AppEnvironment } from '@/lib/environment';
+
 export type SendingMode = 'disabled' | 'dry_run' | 'live';
 
 export type LiveRequirement =
   | 'mode_is_live'
+  | 'production_environment'
   | 'provider_credentials'
   | 'configuration_set'
   | 'unsubscribe_secret'
@@ -35,6 +39,7 @@ export type LiveRequirement =
 
 export interface LiveGateInput {
   mode: SendingMode;
+  appEnvironment: AppEnvironment;
   hasProviderCredentials: boolean;
   hasConfigurationSet: boolean;
   hasUnsubscribeSecret: boolean;
@@ -50,6 +55,7 @@ export interface LiveGateVerdict {
 export function evaluateLiveGate(input: LiveGateInput): LiveGateVerdict {
   const unmet: LiveRequirement[] = [];
   if (input.mode !== 'live') unmet.push('mode_is_live');
+  if (input.appEnvironment !== 'production') unmet.push('production_environment');
   if (!input.hasProviderCredentials) unmet.push('provider_credentials');
   if (!input.hasConfigurationSet) unmet.push('configuration_set');
   if (!input.hasUnsubscribeSecret) unmet.push('unsubscribe_secret');
@@ -73,6 +79,7 @@ function isHttpsUrl(value: string): boolean {
 
 export const LIVE_REQUIREMENT_MESSAGE: Record<LiveRequirement, string> = {
   mode_is_live: 'EMAIL_SENDING_MODE is not set to live.',
+  production_environment: 'APP_ENVIRONMENT is not production, so this deployment never delivers real email.',
   provider_credentials: 'Amazon SES credentials and region are not configured.',
   configuration_set: 'AWS_SES_CONFIGURATION_SET is not configured, so SES would emit no delivery events.',
   unsubscribe_secret: 'UNSUBSCRIBE_SECRET_V1 is not configured, so messages could not carry a working unsubscribe link.',

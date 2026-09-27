@@ -2,7 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { requireWorkspace } from '@/lib/auth/workspace';
-import { ValidationError, ConflictError, ForbiddenError, InternalError } from '@/lib/errors';
+import { ValidationError, ConflictError, ForbiddenError, InternalError, parseInput } from '@/lib/errors';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { buildPage, clampLimit, type Cursor, type Page, type PageDirection } from '@/lib/pagination';
@@ -97,7 +97,7 @@ export async function getContactList(workspaceId: string, listId: string): Promi
 
 export async function createContactList(workspaceId: string, name: string): Promise<ContactList> {
   const access = await requireWorkspace(workspaceId);
-  const parsedName = listNameSchema.parse(name);
+  const parsedName = parseInput(listNameSchema, name);
 
   const supabase = await createSupabaseServerClient();
 
@@ -137,7 +137,7 @@ export async function renameContactList(
   name: string,
 ): Promise<ContactList> {
   const access = await requireWorkspace(workspaceId);
-  const parsedName = listNameSchema.parse(name);
+  const parsedName = parseInput(listNameSchema, name);
 
   const supabase = await createSupabaseServerClient();
 
@@ -186,6 +186,12 @@ export async function deleteContactList(workspaceId: string, listId: string): Pr
     .select('id')
     .maybeSingle();
 
+  // 23503 — fk_campaigns_list is ON DELETE RESTRICT, so a list any campaign
+  // names (draft, scheduled or finished) cannot be deleted. That is a refusal
+  // to explain, not a server fault.
+  if (error?.code === '23503') {
+    throw new ConflictError('A campaign uses this list. Delete or change that campaign first.', error);
+  }
   if (error !== null) {
     logger.error('list delete failed', { dbError: error.message });
     throw new InternalError(error);
@@ -219,8 +225,8 @@ export async function addListMember(
   contactId: string,
 ): Promise<{ added: boolean }> {
   const access = await requireWorkspace(workspaceId);
-  uuidSchema.parse(listId);
-  uuidSchema.parse(contactId);
+  parseInput(uuidSchema, listId);
+  parseInput(uuidSchema, contactId);
 
   const supabase = await createSupabaseServerClient();
 
@@ -267,8 +273,8 @@ export async function removeListMember(
   contactId: string,
 ): Promise<{ removed: boolean }> {
   const access = await requireWorkspace(workspaceId);
-  uuidSchema.parse(listId);
-  uuidSchema.parse(contactId);
+  parseInput(uuidSchema, listId);
+  parseInput(uuidSchema, contactId);
 
   const supabase = await createSupabaseServerClient();
 

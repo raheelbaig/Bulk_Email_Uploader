@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listImports } from '@/lib/imports/service';
 import { listContactLists } from '@/lib/lists/service';
 import { decodeCursor, encodeCursor, type PageDirection } from '@/lib/pagination';
@@ -22,7 +22,7 @@ export default async function ImportsPage({
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   };
 
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const direction: PageDirection = one('dir') === 'backward' ? 'backward' : 'forward';
 
   const [page, lists] = await Promise.all([
@@ -34,7 +34,7 @@ export default async function ImportsPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Import contacts</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Upload a spreadsheet, confirm which column is which, and import. Every row is
           accounted for — nothing is dropped without a reason you can read.
         </p>
@@ -76,10 +76,10 @@ export default async function ImportsPage({
                     <TD className="text-right tabular-nums">
                       {record.rows_valid.toLocaleString('en-US')}
                     </TD>
-                    <TD className="text-[--color-muted-foreground]">
+                    <TD className="text-(--color-muted-foreground)">
                       {record.target_list_name ?? '—'}
                     </TD>
-                    <TD className="whitespace-nowrap text-[--color-muted-foreground]">
+                    <TD className="whitespace-nowrap text-(--color-muted-foreground)">
                       {new Date(record.created_at).toLocaleString()}
                     </TD>
                     <TD className="text-right">

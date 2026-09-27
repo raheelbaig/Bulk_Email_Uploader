@@ -17,9 +17,9 @@ const ICON: Record<PreflightSeverity, typeof Info> = {
 };
 
 const TONE: Record<PreflightSeverity, string> = {
-  blocker: 'text-[--color-destructive]',
+  blocker: 'text-(--color-destructive)',
   warning: 'text-amber-600 dark:text-amber-400',
-  info: 'text-[--color-muted-foreground]',
+  info: 'text-(--color-muted-foreground)',
 };
 
 function IssueRow({ issue }: { issue: PreflightIssue }) {
@@ -29,9 +29,9 @@ function IssueRow({ issue }: { issue: PreflightIssue }) {
       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${TONE[issue.severity]}`} aria-hidden />
       <div className="min-w-0">
         <p className="text-sm font-medium">{issue.title}</p>
-        <p className="text-sm text-[--color-muted-foreground]">{issue.message}</p>
+        <p className="text-sm text-(--color-muted-foreground)">{issue.message}</p>
         {issue.remediation !== undefined && (
-          <p className="mt-0.5 text-xs text-[--color-muted-foreground]">{issue.remediation}</p>
+          <p className="mt-0.5 text-xs text-(--color-muted-foreground)">{issue.remediation}</p>
         )}
       </div>
     </li>
@@ -49,7 +49,7 @@ export function PreflightReport({ result }: { result: PreflightResult }) {
           </>
         ) : (
           <>
-            <XCircle className="h-4 w-4 text-[--color-destructive]" aria-hidden />
+            <XCircle className="h-4 w-4 text-(--color-destructive)" aria-hidden />
             <span className="font-medium">Blocked</span>
           </>
         )}

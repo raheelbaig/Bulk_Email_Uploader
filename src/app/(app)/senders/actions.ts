@@ -94,11 +94,17 @@ export async function verifyDomainAction(_prev: FormState, form: FormData): Prom
   });
 }
 
-export async function removeDomainAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  await removeSenderDomain(workspaceId, String(form.get('domainId') ?? ''));
-  revalidatePath('/senders');
-  redirect('/senders');
+/**
+ * Returns a FormState so "a campaign still uses this domain" reaches the person
+ * as a message; as a void action it threw into the error boundary.
+ */
+export async function removeDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:removeSenderDomain', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await removeSenderDomain(workspaceId, text(form, 'domainId'));
+    revalidatePath('/senders');
+    redirect('/senders');
+  });
 }
 
 // ── Identities ──────────────────────────────────────────────────────────────

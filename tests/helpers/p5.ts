@@ -13,6 +13,9 @@ import { seedTemplate } from './p4';
  * transition trigger and completeness check apply exactly as in production.
  */
 
+/** Obviously not a real address. Test fixtures only. */
+export const QA_POSTAL_ADDRESS = 'QA Test Co.\n1 Example Street\nTestville EX 00000';
+
 export interface LaunchableCampaign {
   workspaceId: string;
   campaignId: string;
@@ -35,9 +38,18 @@ export async function seedLaunchableCampaign(
     requiresUnsubscribe?: boolean;
     domain?: string;
     senderVerified?: boolean;
+    /** The mode the campaign was approved for when scheduled (0012). Default dry_run. */
+    approvedMode?: 'disabled' | 'dry_run' | 'live' | null;
+    /** The workspace footer address (0014). Default: a clearly fake QA address; null clears it. */
+    postalAddress?: string | null;
   } = {},
 ): Promise<LaunchableCampaign> {
   const tag = Math.random().toString(36).slice(2, 8);
+
+  await db.raw(`update workspace_settings set postal_address = $2 where workspace_id = $1`, [
+    workspaceId,
+    options.postalAddress === undefined ? QA_POSTAL_ADDRESS : options.postalAddress,
+  ]);
   const domain = options.domain ?? `send-${tag}.example.com`;
 
   const domainId = await seedSenderDomain(
@@ -95,8 +107,12 @@ export async function seedLaunchableCampaign(
     [templateId],
   );
   await db.raw(
-    `update campaigns set status = 'scheduled', template_snapshot = $2::jsonb where id = $1`,
-    [campaignId, JSON.stringify(snapshot.rows[0]?.snapshot)],
+    `update campaigns set status = 'scheduled', template_snapshot = $2::jsonb, approved_send_mode = $3 where id = $1`,
+    [
+      campaignId,
+      JSON.stringify(snapshot.rows[0]?.snapshot),
+      options.approvedMode === undefined ? 'dry_run' : options.approvedMode,
+    ],
   );
 
   return { workspaceId, campaignId, listId, templateId, senderIdentityId, domainId, contactIds, emails };

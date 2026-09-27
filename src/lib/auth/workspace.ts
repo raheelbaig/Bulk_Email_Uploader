@@ -1,7 +1,8 @@
 import 'server-only';
+import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/session';
-import { ForbiddenError } from '@/lib/errors';
+import { ForbiddenError, UnauthenticatedError } from '@/lib/errors';
 import { enrichContext } from '@/lib/observability/context';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
@@ -84,4 +85,24 @@ export async function currentWorkspace(): Promise<WorkspaceAccess> {
   const workspaceId = String(data.workspace_id);
   enrichContext({ workspaceId });
   return { userId: user.id, workspaceId, role: data.role };
+}
+
+/**
+ * `currentWorkspace()` for Server Component pages: a missing or expired session
+ * redirects to /login instead of reaching the error boundary.
+ *
+ * The (app) layout's redirect does not cover this. On client-side navigation
+ * Next.js renders only the segments that changed, so the shared layout — and
+ * its session check — does not run; the page's own check is the one that fires,
+ * and a thrown `UnauthenticatedError` there shows "Something went wrong".
+ * Route handlers and server actions keep `currentWorkspace()`, whose error they
+ * turn into a 401 or a form message.
+ */
+export async function workspaceForPage(): Promise<WorkspaceAccess> {
+  try {
+    return await currentWorkspace();
+  } catch (cause) {
+    if (cause instanceof UnauthenticatedError) redirect('/login');
+    throw cause;
+  }
 }

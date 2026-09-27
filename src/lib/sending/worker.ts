@@ -15,13 +15,16 @@
  *   2. Reconcile attempts whose outcome never became known (ADR-0001 §3.4).
  *   3. Hold campaigns whose scheduled time was missed by more than the grace
  *      window (ADR-0002 §5.1). They are paused, never launched.
- *   4. Promote due campaigns: re-run preflight against the frozen snapshot and
- *      the sender's current state; launch those that pass, pause those that do
- *      not (scheduled → queued).
+ *   4. Promote due campaigns: hold any whose recorded approval is not the mode
+ *      the deployment is in now (migration 0012); re-run preflight against the
+ *      frozen snapshot and the sender's current state; launch those that pass,
+ *      pause those that do not (scheduled → queued).
  *   5. Materialise queued campaigns' jobs (queued → sending).
- *   6. For each sending campaign: re-check the sender and the unsubscribe
- *      mechanism, reserve budget, claim, re-check eligibility, and send — one
- *      attempt row committed before every provider call.
+ *   6. For each sending campaign: re-check the sender, the unsubscribe
+ *      mechanism and the footer address, reserve budget (per minute and per UTC
+ *      day), claim (skipping recipients inside the cross-campaign cooldown),
+ *      re-check eligibility, and send — one attempt row committed before every
+ *      provider call.
  *   7. Finish campaigns with nothing left to do (sending → completed | failed).
  *
  * ── What makes this safe to run twice at once ─────────────────────────────
@@ -63,6 +66,10 @@ export interface WorkerConfig {
   reconcileGraceMinutes: number;
   uncertainPolicy: 'hold' | 'redispatch';
   scheduleGraceMinutes: number;
+  /** Messages per workspace per UTC day, across campaigns (migration 0013). */
+  dailyCap: number;
+  /** Skip a recipient another campaign reached this recently; 0 disables (0013). */
+  contactCooldownMinutes: number;
   unsubscribeConfigured: boolean;
   live: LiveGateVerdict;
 }
@@ -289,6 +296,21 @@ async function promote(
   const context = await deps.store.loadCampaignContext(ref);
   if (context === null || context.campaign.status !== 'scheduled') return;
 
+  // Migration 0012: a campaign launches only in the mode a person approved it
+  // for when they scheduled it. A deployment switched from disabled to live
+  // does not carry campaigns scheduled during QA along with it — they are held
+  // here, and a person schedules them again under the new mode. The SQL launch
+  // function and the transition trigger refuse the same thing independently.
+  const approved = context.campaign.approved_send_mode;
+  if (approved !== mode) {
+    summary.launchRefused += 1;
+    await pause(deps, ref, ['scheduled'], approved === null ? 'not_approved' : `approved_for_${approved}`, summary, {
+      approvedSendMode: approved,
+      deploymentMode: mode,
+    });
+    return;
+  }
+
   const verdict = evaluateLaunchPreflight(context, {
     sendingMode: deps.config.mode,
     unsubscribeAvailable: deps.config.unsubscribeConfigured,
@@ -356,6 +378,10 @@ async function sendBatch(
     await pause(deps, ref, ['sending'], 'unsubscribe_unavailable', summary);
     return;
   }
+  if (campaign.requires_unsubscribe && (context.postalAddress === null || context.postalAddress.trim() === '')) {
+    await pause(deps, ref, ['sending'], 'postal_address_missing', summary);
+    return;
+  }
   const snapshot = parseTemplateSnapshot(campaign.template_snapshot);
   if (snapshot === null) {
     await pause(deps, ref, ['sending'], 'preflight_failed:template_snapshot_missing', summary);
@@ -367,6 +393,10 @@ async function sendBatch(
 
   let perMinute = config.ratePerMinute;
   let requested = config.batchMax;
+  // A campaign may ask to go slower than the deployment, never faster.
+  if (campaign.max_rate_override !== null && campaign.max_rate_override > 0) {
+    perMinute = Math.min(perMinute, campaign.max_rate_override);
+  }
   if (mode === 'live') {
     const budget = await deps.providerBudget();
     if (budget === null) {
@@ -378,11 +408,14 @@ async function sendBatch(
   }
   if (perMinute <= 0 || requested <= 0) return;
 
-  const granted = await store.reserveBudget(ref.workspaceId, perMinute, requested);
+  const granted = await store.reserveBudget(ref.workspaceId, perMinute, requested, config.dailyCap);
   if (granted <= 0) return;
 
-  const claimed = await store.claimJobs(ref, granted);
+  const claimed = await store.claimJobs(ref, granted, config.contactCooldownMinutes);
   summary.claimed += claimed.length;
+  // Budget reserved for jobs that were not there is handed back, so a campaign
+  // near its end does not spend the day's allowance on nothing.
+  if (claimed.length < granted) await store.refundBudget(ref.workspaceId, granted - claimed.length);
   if (claimed.length === 0) return;
 
   // The eligibility authority, once more, immediately before sending. The claim
@@ -425,6 +458,7 @@ async function sendBatch(
       unsubscribeUrl: campaign.requires_unsubscribe
         ? deps.unsubscribeUrl({ workspaceId: ref.workspaceId, campaignId: ref.campaignId, jobId: job.id })
         : null,
+      postalAddress: context.postalAddress,
       tags: {
         workspace_id: ref.workspaceId,
         campaign_id: ref.campaignId,

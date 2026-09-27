@@ -98,6 +98,12 @@ describe('POST /api/internal/worker/tick', () => {
     expect(tick).not.toHaveBeenCalled();
   });
 
+  it('exports POST alone, so Next.js answers every other verb with 405 and runs nothing', async () => {
+    const route = await import('@/app/api/internal/worker/tick/route');
+    const verbs = Object.keys(route).filter((key) => /^[A-Z]+$/.test(key));
+    expect(verbs).toEqual(['POST']);
+  });
+
   it('a failing tick is a 500 with no detail', async () => {
     tick.mockRejectedValueOnce(new Error('database exploded: password=hunter2'));
     const response = await post(signed());
@@ -111,6 +117,12 @@ describe('/u/[token]', () => {
   const params = (value: string) => ({ params: Promise.resolve({ token: value }) });
   const request = (method: string, body?: string) =>
     new Request(`https://mail.example.com/u/${token}`, { method, ...(body === undefined ? {} : { body }) });
+
+  it('exports GET and POST only; any other verb is a 405', async () => {
+    const route = await import('@/app/u/[token]/route');
+    const verbs = Object.keys(route).filter((key) => /^[A-Z]+$/.test(key)).sort();
+    expect(verbs).toEqual(['GET', 'POST']);
+  });
 
   it('GET shows a confirmation and suppresses nothing — link scanners fetch every URL', async () => {
     const { GET } = await import('@/app/u/[token]/route');

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Globe, Plus } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listSenderDomains } from '@/lib/sender/service';
 import { isProviderConfigured } from '@/lib/sender/provider';
 import { READINESS_LABEL, READINESS_TONE } from '@/lib/sender/status';
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic';
  * verifier, whose answer comes from the provider.
  */
 export default async function SenderDomainsPage() {
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const domains = await listSenderDomains(workspaceId);
   const configured = isProviderConfigured();
 
@@ -32,7 +32,7 @@ export default async function SenderDomainsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Sender domains</h1>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             Domains this workspace has proven it controls. A domain becomes usable only when the
             sending provider and DNS both confirm it — never because it was added here.
           </p>
@@ -93,9 +93,9 @@ export default async function SenderDomainsPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <SenderChecks checks={checksFor(view.record)} />
-                <p className="text-xs text-[--color-muted-foreground]">{view.summary}</p>
+                <p className="text-xs text-(--color-muted-foreground)">{view.summary}</p>
                 {view.record.last_check_error !== null && (
-                  <p className="text-xs text-[--color-destructive]">
+                  <p className="text-xs text-(--color-destructive)">
                     {view.record.last_check_error}
                   </p>
                 )}
@@ -106,7 +106,7 @@ export default async function SenderDomainsPage() {
                   >
                     DNS records and setup
                   </Link>
-                  <span className="text-[--color-muted-foreground]">
+                  <span className="text-(--color-muted-foreground)">
                     {view.identityCount} {view.identityCount === 1 ? 'address' : 'addresses'}
                   </span>
                 </div>

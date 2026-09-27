@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft, AtSign } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listSenderIdentities } from '@/lib/sender/identities';
 import { listSenderDomains } from '@/lib/sender/service';
 import { BLOCKER_MESSAGE, WARNING_MESSAGE } from '@/lib/sender/readiness';
@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
  * allowed to do cannot drift apart.
  */
 export default async function SenderIdentitiesPage() {
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const [identities, domains] = await Promise.all([
     listSenderIdentities(workspaceId),
     listSenderDomains(workspaceId),
@@ -33,13 +33,13 @@ export default async function SenderIdentitiesPage() {
       <div>
         <Link
           href="/senders"
-          className="mb-2 inline-flex items-center gap-1 text-sm text-[--color-muted-foreground] underline underline-offset-4"
+          className="mb-2 inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
         >
           <ArrowLeft className="h-3 w-3" aria-hidden />
           Sender domains
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Sender addresses</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           The addresses this workspace may send from. Each one must sit under a sending domain you
           have added — that is enforced by the database, not only by this form.
         </p>
@@ -52,7 +52,7 @@ export default async function SenderIdentitiesPage() {
         </summary>
         <div className="border-t px-4 py-4">
           {domains.length === 0 ? (
-            <p className="text-sm text-[--color-muted-foreground]">
+            <p className="text-sm text-(--color-muted-foreground)">
               Add a sending domain first — a sender address can only exist under one.
             </p>
           ) : (
@@ -104,7 +104,7 @@ export default async function SenderIdentitiesPage() {
               <TR key={record.id}>
                 <TD className="font-medium">{record.from_name}</TD>
                 <TD>{record.from_email}</TD>
-                <TD className="text-[--color-muted-foreground]">
+                <TD className="text-(--color-muted-foreground)">
                   {domain === null ? (
                     '—'
                   ) : (
@@ -120,7 +120,7 @@ export default async function SenderIdentitiesPage() {
                   <Badge tone={readiness.ready ? 'positive' : 'warning'}>
                     {readiness.ready ? 'Ready' : 'Not ready'}
                   </Badge>
-                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-[--color-muted-foreground]">
+                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-(--color-muted-foreground)">
                     {readiness.blockers.map((blocker) => (
                       <span key={blocker}>{BLOCKER_MESSAGE[blocker]}</span>
                     ))}
@@ -130,7 +130,7 @@ export default async function SenderIdentitiesPage() {
                       ))}
                   </div>
                 </TD>
-                <TD className="text-[--color-muted-foreground]">{record.reply_to ?? '—'}</TD>
+                <TD className="text-(--color-muted-foreground)">{record.reply_to ?? '—'}</TD>
                 <TD>
                   <div className="flex flex-col items-end gap-2">
                     <details className="w-full">

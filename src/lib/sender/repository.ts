@@ -49,6 +49,9 @@ const PG_UNIQUE_VIOLATION = '23505';
 /** Foreign-key violation — here, the composite identity→domain key. */
 const PG_FK_VIOLATION = '23503';
 
+/** A malformed id matches no row; checked here so it never reaches SQL as a 22P02. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type SenderTable = 'sender_domains' | 'sender_identities';
 
 function unavailable(operation: string): never {
@@ -109,6 +112,7 @@ async function build(
     },
 
     getDomain(domainId) {
+      if (!UUID.test(domainId)) return Promise.resolve(null);
       return readDomainBy('id', domainId);
     },
 

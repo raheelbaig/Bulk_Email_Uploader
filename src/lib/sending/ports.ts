@@ -33,6 +33,8 @@ export interface CampaignContext {
   audience: AudienceCounts;
   senderIdentity: SenderIdentityRecord | null;
   senderDomain: SenderDomainRecord | null;
+  /** The workspace's footer address (migration 0014); null when not configured. */
+  postalAddress: string | null;
 }
 
 export interface ClaimedJob {
@@ -65,8 +67,15 @@ export interface SendingStore {
   materializeCampaign(ref: CampaignRef): Promise<number | null>;
 
   // ── Sending ────────────────────────────────────────────────────────────
-  reserveBudget(workspaceId: string, perMinute: number, requested: number): Promise<number>;
-  claimJobs(ref: CampaignRef, limit: number): Promise<ClaimedJob[]>;
+  /** Also bounded by the workspace's cap per UTC day (migration 0013). */
+  reserveBudget(workspaceId: string, perMinute: number, requested: number, dailyCap: number): Promise<number>;
+  /** Returns reserved budget a claim did not use (migration 0013). */
+  refundBudget(workspaceId: string, unused: number): Promise<void>;
+  /**
+   * Skips recipients another campaign of the same execution mode reached within
+   * `cooldownMinutes` (0 disables it) — migration 0013.
+   */
+  claimJobs(ref: CampaignRef, limit: number, cooldownMinutes: number): Promise<ClaimedJob[]>;
   releaseJob(workspaceId: string, jobId: string, outcome: ReleaseOutcome, code: string): Promise<boolean>;
   beginAttempt(
     workspaceId: string,

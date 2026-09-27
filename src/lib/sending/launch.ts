@@ -76,6 +76,7 @@ export function evaluateLaunchPreflight(
     snapshot,
     sampleRender,
     unsubscribe: { mechanismAvailable: options.unsubscribeAvailable },
+    footer: { postalAddress: context.postalAddress },
     sendingMode: options.sendingMode,
     ...(options.now === undefined ? {} : { now: options.now }),
   });

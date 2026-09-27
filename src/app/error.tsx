@@ -19,11 +19,11 @@ export default function ErrorBoundary({
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="flex max-w-md flex-col items-start gap-4">
         <h1 className="text-lg font-semibold">Something went wrong on our side.</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Try again shortly. If it keeps happening, quote this reference when you get in touch.
         </p>
         {error.digest !== undefined && (
-          <code className="rounded bg-[--color-muted] px-2 py-1 text-xs">{error.digest}</code>
+          <code className="rounded bg-(--color-muted) px-2 py-1 text-xs">{error.digest}</code>
         )}
         <Button onClick={reset} size="sm">
           Try again

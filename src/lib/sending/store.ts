@@ -27,7 +27,7 @@ import type { CampaignContext, CampaignRef, ClaimedJob, SendingStore } from './p
 const CAMPAIGN_COLUMNS =
   'id, workspace_id, name, status, template_id, sender_identity_id, list_id, ' +
   'template_snapshot, scheduled_at, launched_at, completed_at, requires_unsubscribe, ' +
-  'max_rate_override, pause_reason, launched_by, execution_mode, n_total, n_sent, n_delivered, ' +
+  'max_rate_override, pause_reason, launched_by, execution_mode, approved_send_mode, n_total, n_sent, n_delivered, ' +
   'n_bounced, n_complained, n_failed, n_unsubscribed, n_suppressed, created_at, updated_at';
 
 type Row = Record<string, unknown>;
@@ -130,7 +130,12 @@ export function sendingStore(): SendingStore {
         campaign.sender_identity_id === null ? null : await senders.getIdentity(campaign.sender_identity_id);
       const senderDomain = senderIdentity === null ? null : await senders.getDomain(senderIdentity.domain_id);
 
-      return { campaign, list, audience, senderIdentity, senderDomain };
+      const settings = await scoped.select('workspace_settings', 'postal_address').maybeSingle();
+      if (settings.error !== null) throw new Error(`settings read failed: ${settings.error.message}`);
+      const address: unknown = (settings.data as Row | null)?.['postal_address'];
+      const postalAddress = typeof address === 'string' && address.trim().length > 0 ? address : null;
+
+      return { campaign, list, audience, senderIdentity, senderDomain, postalAddress };
     },
 
     async promoteCampaign({ workspaceId, campaignId }, mode) {
@@ -162,21 +167,27 @@ export function sendingStore(): SendingStore {
       return data === null ? null : Number(data);
     },
 
-    async reserveBudget(workspaceId, perMinute, requested) {
+    async reserveBudget(workspaceId, perMinute, requested, dailyCap) {
       return Number(
         await call('sending_reserve_budget', {
           p_workspace_id: workspaceId,
           p_per_minute: perMinute,
           p_requested: requested,
+          p_daily_cap: dailyCap,
         }),
       );
     },
 
-    async claimJobs({ workspaceId, campaignId }, limit): Promise<ClaimedJob[]> {
+    async refundBudget(workspaceId, unused) {
+      await call('sending_refund_budget', { p_workspace_id: workspaceId, p_unused: unused });
+    },
+
+    async claimJobs({ workspaceId, campaignId }, limit, cooldownMinutes): Promise<ClaimedJob[]> {
       const data = await call('sending_claim_jobs', {
         p_workspace_id: workspaceId,
         p_campaign_id: campaignId,
         p_limit: limit,
+        p_cooldown_minutes: cooldownMinutes,
       });
       return rows(data).map((row) => ({
         id: String(row['id']),

@@ -5,7 +5,7 @@ import { requireWorkspace } from '@/lib/auth/workspace';
 import { serviceForWorkspace } from '@/lib/db/service';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
-import { ForbiddenError, InternalError, ValidationError } from '@/lib/errors';
+import { ForbiddenError, InternalError, ValidationError, parseInput } from '@/lib/errors';
 import { enforceRateLimit } from '@/lib/rate-limit';
 import { serviceEligibilityReader } from '@/lib/eligibility/readers';
 import { buildPage, clampLimit, type Cursor, type Page, type PageDirection } from '@/lib/pagination';
@@ -126,7 +126,7 @@ export async function listImports(
 
 export async function getImport(workspaceId: string, importId: string): Promise<ImportSummary> {
   await requireWorkspace(workspaceId);
-  uuidSchema.parse(importId);
+  parseInput(uuidSchema, importId);
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
@@ -166,7 +166,7 @@ export async function listRejections(
   limit = 200,
 ): Promise<Array<RejectionRecord & { id: string }>> {
   await requireWorkspace(workspaceId);
-  uuidSchema.parse(importId);
+  parseInput(uuidSchema, importId);
   // Proves the import belongs to this workspace before its rejections are read.
   await getImport(workspaceId, importId);
 
@@ -191,7 +191,11 @@ export async function listRejections(
 
 export const createImportSchema = z.object({
   filename: z.string().min(1).max(255),
-  byteSize: z.number().int().positive().max(MAX_UPLOAD_BYTES),
+  byteSize: z
+    .number()
+    .int()
+    .positive('That file is empty. Choose a file with a header row and at least one contact.')
+    .max(MAX_UPLOAD_BYTES, 'That file is too large to import.'),
   contentType: z.string().min(1).max(128),
   targetListId: z.union([z.uuid(), z.literal(''), z.null()]).optional(),
 });
@@ -222,7 +226,7 @@ export async function createImport(
   const access = await requireWorkspace(workspaceId);
   await enforceRateLimit('import.create', access.userId, access.workspaceId);
 
-  const parsed = createImportSchema.parse(input);
+  const parsed = parseInput(createImportSchema, input);
   const check = checkDeclaredFile({
     filename: parsed.filename,
     byteSize: parsed.byteSize,
@@ -338,7 +342,7 @@ export async function inspectImport(
 ): Promise<InspectionResult> {
   const access = await requireWorkspace(workspaceId);
   await enforceRateLimit('import.inspect', access.userId, access.workspaceId);
-  uuidSchema.parse(importId);
+  parseInput(uuidSchema, importId);
 
   const repository = importRepository(access.workspaceId);
   const record = await repository.get(importId);
@@ -442,7 +446,7 @@ export async function confirmMapping(
 ): Promise<ConfirmMappingResult> {
   const access = await requireWorkspace(workspaceId);
   await enforceRateLimit('import.confirm', access.userId, access.workspaceId);
-  uuidSchema.parse(importId);
+  parseInput(uuidSchema, importId);
 
   const repository = importRepository(access.workspaceId);
   const record = await repository.get(importId);
@@ -530,7 +534,7 @@ export async function runQueuedImport(
 ): Promise<RunnerOutcome> {
   const access = await requireWorkspace(workspaceId);
   await enforceRateLimit('import.process', access.userId, access.workspaceId);
-  uuidSchema.parse(importId);
+  parseInput(uuidSchema, importId);
 
   const repository = importRepository(access.workspaceId);
   const storage = importStorage(access.workspaceId);

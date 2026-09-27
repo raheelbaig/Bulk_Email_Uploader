@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { getContact } from '@/lib/contacts/service';
 import { listContactLists, listIdsForContact } from '@/lib/lists/service';
 import { findSuppression } from '@/lib/suppression/service';
@@ -11,7 +11,6 @@ import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -23,7 +22,7 @@ export default async function ContactDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
 
   let contact;
   try {
@@ -49,13 +48,13 @@ export default async function ContactDetailPage({
       <div>
         <Link
           href="/contacts"
-          className="inline-flex items-center gap-1 text-sm text-[--color-muted-foreground] underline underline-offset-4"
+          className="inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           Contacts
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{contact.email_normalized}</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Added {new Date(contact.created_at).toLocaleDateString()}
         </p>
       </div>
@@ -124,7 +123,7 @@ export default async function ContactDetailPage({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {current.length === 0 ? (
-            <p className="text-sm text-[--color-muted-foreground]">Not on any list.</p>
+            <p className="text-sm text-(--color-muted-foreground)">Not on any list.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {current.map((list) => (
@@ -169,12 +168,14 @@ export default async function ContactDetailPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={deleteContactAction}>
+          <ActionForm
+            action={deleteContactAction}
+            submitLabel="Delete contact"
+            pendingLabel="Deleting…"
+            variant="destructive"
+          >
             <input type="hidden" name="contactId" value={contact.id} />
-            <Button type="submit" variant="destructive" size="sm">
-              Delete contact
-            </Button>
-          </form>
+          </ActionForm>
         </CardContent>
       </Card>
     </div>

@@ -55,11 +55,19 @@ describe('migration fingerprint', () => {
 describe('target description', () => {
   it('never contains credentials', () => {
     const secret = 'S3cr3t-p@ss';
-    const url = `postgresql://postgres.abcdefghij:${encodeURIComponent(secret)}@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`;
+    const url = `postgresql://postgres.abcdefghijklmnopqrst:${encodeURIComponent(secret)}@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`;
     const t = describeTarget(url);
-    expect(t).toEqual({ host: 'aws-0-eu-west-1.pooler.supabase.com', port: '5432', database: 'postgres', local: false });
+    // The project ref is public (it is in NEXT_PUBLIC_SUPABASE_URL); the
+    // username around it and the password are not, and never appear.
+    expect(t).toEqual({
+      host: 'aws-0-eu-west-1.pooler.supabase.com',
+      port: '5432',
+      database: 'postgres',
+      local: false,
+      projectRef: 'abcdefghijklmnopqrst',
+    });
     expect(JSON.stringify(t)).not.toContain('S3cr3t');
-    expect(JSON.stringify(t)).not.toContain('postgres.abcdefghij');
+    expect(JSON.stringify(t)).not.toContain('postgres.abcdefghijklmnopqrst');
   });
 
   it('recognises local hosts', () => {
@@ -70,20 +78,50 @@ describe('target description', () => {
   });
 
   it('does not echo an unparseable URL', () => {
-    expect(describeTarget('not a url with secret')).toEqual({ host: null, port: null, database: null, local: false });
+    expect(describeTarget('not a url with secret')).toEqual({
+      host: null,
+      port: null,
+      database: null,
+      local: false,
+      projectRef: null,
+    });
+  });
+
+  it('names the Supabase project, because every project in a region shares a pooler host', () => {
+    const other = describeTarget('postgresql://postgres.otherrefaaaaaaaaaaa:p@aws-0-ap-south-1.pooler.supabase.com:5432/postgres');
+    const production = describeTarget('postgresql://postgres.productionrefbbbbbbb:p@aws-0-ap-south-1.pooler.supabase.com:5432/postgres');
+    expect(other.host).toBe(production.host);
+    expect(other.projectRef).toBe('otherrefaaaaaaaaaaa');
+    expect(production.projectRef).toBe('productionrefbbbbbbb');
+    expect(describeTarget('postgresql://postgres:p@db.directrefcccccccccccc.supabase.co:5432/postgres').projectRef).toBe(
+      'directrefcccccccccccc',
+    );
+    expect(describeTarget('postgres://u:p@db.example.com/db').projectRef).toBeNull();
   });
 });
 
 describe('arguments', () => {
   it('parses the flags and rejects unknown ones', () => {
-    expect(parseArgs([])).toEqual({ dryRun: false, yesProduction: false, unknown: [] });
-    expect(parseArgs(['--dry-run', '--yes-production'])).toEqual({ dryRun: true, yesProduction: true, unknown: [] });
+    expect(parseArgs([])).toEqual({ dryRun: false, yesProduction: false, confirmProduction: false, projectRef: null, unknown: [] });
+    expect(parseArgs(['--dry-run', '--yes-production'])).toEqual({
+      dryRun: true,
+      yesProduction: true,
+      confirmProduction: false,
+      projectRef: null,
+      unknown: [],
+    });
+    expect(parseArgs(['--yes-production', '--project-ref=abc'])).toMatchObject({ projectRef: 'abc', unknown: [] });
     expect(parseArgs(['--yes'])).toMatchObject({ unknown: ['--yes'] });
   });
 });
 
 describe('runner source', () => {
   const source = readFileSync(join(process.cwd(), 'scripts', 'migrate.mjs'), 'utf8');
+
+  it('a remote apply must name the project it changes, not only say --yes-production', () => {
+    // The rules themselves are tested in tests/environment-separation.test.ts.
+    expect(source).toMatch(/if \(!args\.dryRun\) \{\s+const refusal = applyRefusal\(target, args\)/);
+  });
 
   it('never prints the connection string', () => {
     const printing = source.split('\n').filter((l) => /console\.|stdout\.write/.test(l));
@@ -93,7 +131,6 @@ describe('runner source', () => {
   it('serialises runs with an advisory lock and gates remote targets', () => {
     expect(source).toContain('pg_advisory_lock(');
     expect(source).toContain('pg_advisory_unlock(');
-    expect(source).toMatch(/!target\.local && !args\.dryRun && !args\.yesProduction/);
     expect(source).toContain("sql.begin('read only'");
   });
 });

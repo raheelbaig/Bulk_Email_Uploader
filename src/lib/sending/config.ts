@@ -19,6 +19,8 @@ export interface SendingConfig {
   reconcileGraceMinutes: number;
   uncertainPolicy: 'hold' | 'redispatch';
   scheduleGraceMinutes: number;
+  dailyCap: number;
+  contactCooldownMinutes: number;
   appUrl: string;
   unsubscribeConfigured: boolean;
   live: LiveGateVerdict;
@@ -37,10 +39,13 @@ export function sendingConfig(): SendingConfig {
     reconcileGraceMinutes: env.RECONCILE_GRACE_MINUTES,
     uncertainPolicy: env.UNCERTAIN_ATTEMPT_POLICY,
     scheduleGraceMinutes: env.SCHEDULE_GRACE_MINUTES,
+    dailyCap: env.SEND_DAILY_CAP,
+    contactCooldownMinutes: env.CONTACT_COOLDOWN_HOURS * 60,
     appUrl: env.NEXT_PUBLIC_APP_URL,
     unsubscribeConfigured,
     live: evaluateLiveGate({
       mode: env.EMAIL_SENDING_MODE,
+      appEnvironment: env.APP_ENVIRONMENT,
       hasProviderCredentials:
         env.AWS_REGION !== undefined &&
         env.AWS_ACCESS_KEY_ID !== undefined &&

@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
+import { isAppError } from '@/lib/errors';
 import { getTemplate } from '@/lib/templates/service';
 import { buildPreview } from '@/lib/templates/preview';
 import { renderableFromTemplate } from '@/lib/campaigns/snapshot';
@@ -15,7 +17,6 @@ import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { MessagePreview } from '@/components/template-preview';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
 export const dynamic = 'force-dynamic';
@@ -29,8 +30,12 @@ export const dynamic = 'force-dynamic';
  */
 export default async function TemplatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { workspaceId } = await currentWorkspace();
-  const template = await getTemplate(workspaceId, id);
+  const { workspaceId } = await workspaceForPage();
+  const template = await getTemplate(workspaceId, id).catch((err: unknown) => {
+    // Absent, not-yours and malformed are the same answer: not found.
+    if (isAppError(err) && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND' || err.code === 'VALIDATION_FAILED')) notFound();
+    throw err;
+  });
 
   const preview = buildPreview({ template: renderableFromTemplate(template) });
 
@@ -40,23 +45,26 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
         <div>
           <Link
             href="/templates"
-            className="flex items-center gap-1 text-sm text-[--color-muted-foreground]"
+            className="flex items-center gap-1 text-sm text-(--color-muted-foreground)"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             Templates
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{template.name}</h1>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             Version {template.version}
             {template.variables.length > 0 && ` · uses ${template.variables.join(', ')}`}
           </p>
         </div>
-        <form action={deleteTemplateAction}>
+        <ActionForm
+          action={deleteTemplateAction}
+          submitLabel="Delete"
+          pendingLabel="Deleting…"
+          variant="destructive"
+          className="flex max-w-xs flex-col items-end gap-2"
+        >
           <input type="hidden" name="templateId" value={template.id} />
-          <Button type="submit" variant="destructive" size="sm">
-            Delete
-          </Button>
-        </form>
+        </ActionForm>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -95,7 +103,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
                 Plain-text version
               </label>
               <Textarea id="text" name="text" rows={8} defaultValue={template.text} />
-              <p className="text-xs text-[--color-muted-foreground]">
+              <p className="text-xs text-(--color-muted-foreground)">
                 Clear this box and save to regenerate it from the HTML.
               </p>
             </div>
@@ -109,7 +117,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
               ))}
               <Badge>{'{{custom.field}}'}</Badge>
             </div>
-            <p className="mt-2 text-xs text-[--color-muted-foreground]">
+            <p className="mt-2 text-xs text-(--color-muted-foreground)">
               Anything else is rejected when the template is saved. Templates substitute field
               names only — they cannot contain logic or expressions.
             </p>

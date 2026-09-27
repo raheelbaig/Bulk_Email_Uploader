@@ -12,8 +12,8 @@ export function Alert({
       className={cn(
         'rounded-md border px-4 py-3 text-sm',
         tone === 'destructive'
-          ? 'border-[--color-destructive] text-[--color-destructive]'
-          : 'bg-[--color-muted]',
+          ? 'border-(--color-destructive) text-(--color-destructive)'
+          : 'bg-(--color-muted)',
         className,
       )}
       {...props}

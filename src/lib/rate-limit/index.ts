@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { unscopedServiceClient } from '@/lib/db/service';
 import { RateLimitedError } from '@/lib/errors';
 import { logger } from '@/lib/observability/logger';
@@ -34,7 +35,12 @@ export type RateLimitAction =
   | 'sender.identity_write'
   | 'template.write'
   | 'campaign.write'
-  | 'campaign.preflight';
+  | 'campaign.preflight'
+  // Unauthenticated entry points (QA pass 2, 2026-09-25). Keyed by a hashed
+  // subject rather than a session, because there is no session yet.
+  | 'auth.sign_in_account'
+  | 'auth.sign_in_ip'
+  | 'auth.sign_up_ip';
 
 export interface RateLimitRule {
   limit: number;
@@ -116,6 +122,29 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitRule> = {
     windowSeconds: 600,
     message: 'Too many preflight checks. Wait a moment and try again.',
   },
+  // Password guessing against one account, from anywhere. This is the control
+  // that holds regardless of how requests are spread across addresses. The
+  // cost is that someone who knows an address can lock its owner out of the
+  // password form for up to 15 minutes — the usual trade, and bounded.
+  'auth.sign_in_account': {
+    limit: 10,
+    windowSeconds: 900,
+    message: 'Too many sign-in attempts for this account. Wait 15 minutes and try again.',
+  },
+  // Spraying many accounts from one client. Best effort: it trusts the first
+  // X-Forwarded-For hop, which the hosting edge sets (Vercel overwrites it) but
+  // which is spoofable where no proxy does. The per-account limit above does not
+  // depend on it.
+  'auth.sign_in_ip': {
+    limit: 50,
+    windowSeconds: 900,
+    message: 'Too many sign-in attempts. Wait 15 minutes and try again.',
+  },
+  'auth.sign_up_ip': {
+    limit: 10,
+    windowSeconds: 3600,
+    message: 'Too many sign-up attempts. Wait an hour and try again.',
+  },
 };
 
 /**
@@ -129,6 +158,15 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitRule> = {
  */
 export function bucketKey(action: RateLimitAction, userId: string, workspaceId: string): string {
   return `${action}:u:${userId}:w:${workspaceId}`;
+}
+
+/**
+ * The bucket key for an unauthenticated subject: an email address or a client
+ * address. Hashed, so the limiter table holds no raw address of either kind.
+ */
+export function subjectBucketKey(action: RateLimitAction, subject: string): string {
+  const digest = createHash('sha256').update(subject.trim().toLowerCase(), 'utf8').digest('hex').slice(0, 40);
+  return `${action}:s:${digest}`;
 }
 
 export interface RateLimitDecision {
@@ -151,8 +189,20 @@ export async function consumeRateLimit(
   userId: string,
   workspaceId: string,
 ): Promise<RateLimitDecision> {
+  return consumeKey(action, bucketKey(action, userId, workspaceId), { workspaceId, userId });
+}
+
+/** As `consumeRateLimit`, for an unauthenticated subject (see `subjectBucketKey`). */
+export async function consumeSubjectRateLimit(action: RateLimitAction, subject: string): Promise<RateLimitDecision> {
+  return consumeKey(action, subjectBucketKey(action, subject), {});
+}
+
+async function consumeKey(
+  action: RateLimitAction,
+  key: string,
+  context: { workspaceId?: string; userId?: string },
+): Promise<RateLimitDecision> {
   const rule = RATE_LIMITS[action];
-  const key = bucketKey(action, userId, workspaceId);
 
   try {
     const db = unscopedServiceClient('rate limit counter (keyed by user, not workspace)');
@@ -172,7 +222,7 @@ export async function consumeRateLimit(
 
     const allowed = data === true;
     if (!allowed) {
-      logger.warn('rate limit exceeded', { action, workspaceId, userId });
+      logger.warn('rate limit exceeded', { action, ...context });
     }
     return { allowed, action };
   } catch (cause) {

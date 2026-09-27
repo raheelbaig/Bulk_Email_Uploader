@@ -18,13 +18,15 @@ export default function SignupPage() {
   return (
     <Card>
       <CardHeader>
-        <Mail className="h-5 w-5 text-[--color-muted-foreground]" aria-hidden />
+        <Mail className="h-5 w-5 text-(--color-muted-foreground)" aria-hidden />
         <CardTitle>Create your account</CardTitle>
         <CardDescription>A workspace is set up for you automatically.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-4">
-          {state.message !== null && <Alert tone="destructive">{state.message}</Alert>}
+          {state.message !== null && (
+            <Alert tone={state.ok === true ? 'default' : 'destructive'}>{state.message}</Alert>
+          )}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="workspace_name">Workspace name</Label>
             <Input id="workspace_name" name="workspace_name" placeholder="Acme" maxLength={120} />
@@ -43,12 +45,12 @@ export default function SignupPage() {
               minLength={8}
               required
             />
-            <p className="text-xs text-[--color-muted-foreground]">At least 8 characters.</p>
+            <p className="text-xs text-(--color-muted-foreground)">At least 8 characters.</p>
           </div>
           <Button type="submit" disabled={pending}>
             {pending ? 'Creating account…' : 'Create account'}
           </Button>
-          <p className="text-center text-sm text-[--color-muted-foreground]">
+          <p className="text-center text-sm text-(--color-muted-foreground)">
             Already have an account?{' '}
             <Link href="/login" className="underline underline-offset-4">
               Sign in

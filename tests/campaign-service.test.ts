@@ -25,9 +25,14 @@ const auditWrites: Array<{ action: string; metadata: Record<string, unknown> | u
 const rateLimited: string[] = [];
 
 vi.mock('@/lib/auth/workspace', () => ({
-  requireWorkspace: async (workspaceId: string) => {
+  // Honours minimumRole the way the real one does, so role checks are testable.
+  requireWorkspace: async (workspaceId: string, options?: { minimumRole?: 'owner' | 'admin' | 'member' }) => {
     const { ForbiddenError } = await import('@/lib/errors');
     if (workspaceId !== currentAccess.workspaceId) throw new ForbiddenError();
+    const rank = { member: 1, admin: 2, owner: 3 };
+    if (options?.minimumRole !== undefined && rank[currentAccess.role] < rank[options.minimumRole]) {
+      throw new ForbiddenError();
+    }
     return currentAccess;
   },
 }));
@@ -146,6 +151,8 @@ describe('campaign and template services', () => {
     await db.raw('delete from contacts');
     await db.raw('delete from sender_identities');
     await db.raw('delete from sender_domains');
+    // Migration 0014: every workspace has a footer address unless a test removes it. Clearly fake.
+    await db.raw(`update workspace_settings set postal_address = 'QA Test Co., 1 Example Street, Testville'`);
 
     currentAccess = { userId: alice.userId, workspaceId: alice.workspaceId, role: 'owner' };
     senderReadiness = { ready: true, blockers: [], warnings: [], domainReadiness: 'VERIFIED' };
@@ -462,6 +469,39 @@ describe('campaign and template services', () => {
       expect(snapshot?.subject).toBe('Hello {{first_name}}');
       expect(snapshot?.version).toBe(1);
       expect(auditWrites.some((write) => write.action === 'campaign.scheduled')).toBe(true);
+    });
+
+    it('requires admin: a member can prepare a campaign but not authorise its delivery', async () => {
+      const { campaignId } = await readyCampaign();
+      currentAccess = { ...currentAccess, role: 'member' };
+      try {
+        await expect(scheduleCampaign(ws(), campaignId)).rejects.toThrow();
+        expect(await campaignStatus(db, campaignId)).not.toBe('scheduled');
+        // Stopping is the safe direction and stays open to members.
+        await expect(cancelCampaign(ws(), campaignId)).resolves.toMatchObject({ status: 'cancelled' });
+      } finally {
+        currentAccess = { ...currentAccess, role: 'owner' };
+      }
+    });
+
+    it('records the deployment mode as its approval, and unscheduling withdraws it (migration 0012)', async () => {
+      const { campaignId } = await readyCampaign();
+      // This suite's deployment is `disabled` (see the sending config mock).
+      const { campaign } = await scheduleCampaign(ws(), campaignId);
+      expect(campaign.approved_send_mode).toBe('disabled');
+      expect(auditWrites.find((w) => w.action === 'campaign.scheduled')?.metadata).toMatchObject({
+        approvedSendMode: 'disabled',
+      });
+
+      const draft = await unscheduleCampaign(ws(), campaignId);
+      expect(draft.approved_send_mode).toBeNull();
+    });
+
+    it('refuses to schedule while the workspace has no footer postal address (migration 0014)', async () => {
+      const { campaignId } = await readyCampaign();
+      await db.raw(`update workspace_settings set postal_address = null where workspace_id = $1`, [ws()]);
+      await expect(scheduleCampaign(ws(), campaignId)).rejects.toThrow(/postal address/i);
+      expect(await campaignStatus(db, campaignId)).toBe('draft');
     });
 
     it('refuses to schedule a campaign that is not ready', async () => {

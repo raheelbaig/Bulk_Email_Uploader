@@ -10,7 +10,7 @@ export function Table({ className, ...props }: React.ComponentProps<'table'>) {
 }
 
 export function THead({ className, ...props }: React.ComponentProps<'thead'>) {
-  return <thead className={cn('border-b bg-[--color-muted]', className)} {...props} />;
+  return <thead className={cn('border-b bg-(--color-muted)', className)} {...props} />;
 }
 
 export function TBody(props: React.ComponentProps<'tbody'>) {
@@ -25,7 +25,7 @@ export function TH({ className, ...props }: React.ComponentProps<'th'>) {
   return (
     <th
       className={cn(
-        'px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[--color-muted-foreground]',
+        'px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-(--color-muted-foreground)',
         className,
       )}
       {...props}
@@ -39,7 +39,7 @@ export function TD({ className, ...props }: React.ComponentProps<'td'>) {
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed px-6 py-12 text-center text-sm text-[--color-muted-foreground]">
+    <div className="rounded-lg border border-dashed px-6 py-12 text-center text-sm text-(--color-muted-foreground)">
       {children}
     </div>
   );

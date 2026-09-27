@@ -22,7 +22,7 @@ describe('the sending schema', () => {
 
   /** Launches `c` and claims one job, returning its id. */
   async function claimOne(campaign: LaunchableCampaign): Promise<string> {
-    const [row] = await svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 1)`, [
+    const [row] = await svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 1, 0)`, [
       campaign.workspaceId,
       campaign.campaignId,
     ]);
@@ -58,7 +58,7 @@ describe('the sending schema', () => {
       `sending_active_campaigns(10)`,
       `sending_promote_campaign('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 'live')`,
       `sending_materialize_campaign('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000')`,
-      `sending_claim_jobs('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 10)`,
+      `sending_claim_jobs('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 10, 0)`,
       `sending_record_accepted('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 'x')`,
       `sending_resolve_uncertain('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 'redispatch')`,
       `sending_record_unsubscribe('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000')`,
@@ -84,7 +84,9 @@ describe('the sending schema', () => {
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname like 'sending\\_%'`,
       );
-      expect(rows.rows.length).toBe(18);
+      // 18 from 0010, plus sending_refund_budget (0013). The capped reserve and
+      // the cooldown-aware claim replaced their 0010 versions rather than adding.
+      expect(rows.rows.length).toBe(19);
       for (const row of rows.rows) {
         expect(row, row.proname).toMatchObject({ auth: false, anon: false, svc: true });
       }
@@ -160,7 +162,9 @@ describe('the sending schema', () => {
       const err = await expectRejected(() =>
         db.raw(
           `insert into email_jobs (workspace_id, campaign_id, contact_id, to_email)
-           select workspace_id, campaign_id, contact_id, to_email || '.x' from email_jobs where id = $1`,
+           select workspace_id, campaign_id, contact_id, to_email || '.xx' from email_jobs where id = $1`,
+          // A different but still canonical address (0015), so only the
+          // contact uniqueness can refuse it.
           [job!.id],
         ),
       );
@@ -233,8 +237,8 @@ describe('the sending schema', () => {
     it('two claims take disjoint jobs', async () => {
       const campaign = await launched(6);
       const [a, b] = await Promise.all([
-        svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 3)`, [campaign.workspaceId, campaign.campaignId]),
-        svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 3)`, [campaign.workspaceId, campaign.campaignId]),
+        svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 3, 0)`, [campaign.workspaceId, campaign.campaignId]),
+        svc<{ id: string }>(`select id from sending_claim_jobs($1, $2, 3, 0)`, [campaign.workspaceId, campaign.campaignId]),
       ]);
       const ids = [...a!, ...b!].map((r) => r.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -247,13 +251,13 @@ describe('the sending schema', () => {
         campaign.workspaceId,
         campaign.campaignId,
       ]);
-      const rows = await svc(`select * from sending_claim_jobs($1, $2, 10)`, [campaign.workspaceId, campaign.campaignId]);
+      const rows = await svc(`select * from sending_claim_jobs($1, $2, 10, 0)`, [campaign.workspaceId, campaign.campaignId]);
       expect(rows).toEqual([]);
     });
 
     it('the workspace argument is checked against the row, not trusted', async () => {
       const campaign = await launched(1);
-      const rows = await svc(`select * from sending_claim_jobs($1, $2, 10)`, [bob.workspaceId, campaign.campaignId]);
+      const rows = await svc(`select * from sending_claim_jobs($1, $2, 10, 0)`, [bob.workspaceId, campaign.campaignId]);
       expect(rows).toEqual([]);
       expect(
         (await svc<{ ok: boolean | null }>(`select sending_record_unsubscribe($1, (select id from email_jobs where campaign_id = $2 limit 1)) as ok`, [
@@ -398,11 +402,11 @@ describe('the sending schema', () => {
     it('never grants more than the per-minute limit, however it is asked', async () => {
       const ws = bob.workspaceId;
       const grants = await Promise.all(
-        [4, 4, 4, 4].map((n) => svc<{ g: number }>(`select sending_reserve_budget($1, 10, $2) as g`, [ws, n])),
+        [4, 4, 4, 4].map((n) => svc<{ g: number }>(`select sending_reserve_budget($1, 10, $2, 1000000) as g`, [ws, n])),
       );
       const total = grants.reduce((sum, rows) => sum + (rows[0]?.g ?? 0), 0);
       expect(total).toBe(10);
-      const [after] = await svc<{ g: number }>(`select sending_reserve_budget($1, 10, 5) as g`, [ws]);
+      const [after] = await svc<{ g: number }>(`select sending_reserve_budget($1, 10, 5, 1000000) as g`, [ws]);
       expect(after?.g).toBe(0);
     });
   });

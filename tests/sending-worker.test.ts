@@ -38,6 +38,8 @@ const BASE_CONFIG: WorkerConfig = {
   reconcileGraceMinutes: 30,
   uncertainPolicy: 'hold',
   scheduleGraceMinutes: 120,
+  dailyCap: 100_000,
+  contactCooldownMinutes: 24 * 60,
   unsubscribeConfigured: true,
   live: { allowed: false, unmet: ['mode_is_live'] },
 };
@@ -286,7 +288,7 @@ describe('the send tick', () => {
       const c = await launchedCampaign(2);
       const store = testSendingStore(db);
       // A worker claims and dies before recording any attempt.
-      const claimed = await store.claimJobs(c, 10);
+      const claimed = await store.claimJobs(c, 10, 0);
       expect(claimed).toHaveLength(2);
 
       const provider = scripted('dry_run', accept);
@@ -308,7 +310,7 @@ describe('the send tick', () => {
     it('obligation 1 & 5: a crash AFTER the attempt row → never automatically resent', async () => {
       const c = await launchedCampaign(1);
       const store = testSendingStore(db);
-      const [job] = await store.claimJobs(c, 10);
+      const [job] = await store.claimJobs(c, 10, 0);
       await store.beginAttempt(c.workspaceId, job!.id, 'dry_run');
       // ... the process dies here, around the provider call.
 
@@ -674,7 +676,7 @@ describe('the send tick', () => {
     });
 
     it('a live campaign waits, pending, while the gate is closed — and sends when it opens', async () => {
-      const c = await launchable({ recipients: 2 });
+      const c = await launchable({ recipients: 2, approvedMode: 'live' });
       const live = scripted('live', accept);
       // Launches live, but the provider budget is zero this tick, so nothing is sent.
       const opening = harness(LIVE_OPEN, { live });
@@ -700,7 +702,7 @@ describe('the send tick', () => {
     });
 
     it('live sending honours the provider-derived budget', async () => {
-      const c = await launchable({ recipients: 5 });
+      const c = await launchable({ recipients: 5, approvedMode: 'live' });
       const live = scripted('live', accept);
       const h = harness(LIVE_OPEN, { live });
       await runSendTick({ ...h.deps, providerBudget: async () => ({ perMinute: 100, remainingToday: 2 }) });
@@ -713,7 +715,7 @@ describe('the send tick', () => {
     });
 
     it('live sending waits when provider limits cannot be read (stale-quota guard)', async () => {
-      await launchable({ recipients: 2 });
+      await launchable({ recipients: 2, approvedMode: 'live' });
       const live = scripted('live', accept);
       const h = harness(LIVE_OPEN, { live });
       await runSendTick({ ...h.deps, providerBudget: async () => null });

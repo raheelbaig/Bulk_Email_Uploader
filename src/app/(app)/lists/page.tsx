@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ListPlus } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listContactLists } from '@/lib/lists/service';
 import { decodeCursor, encodeCursor, type PageDirection } from '@/lib/pagination';
 import { createListAction } from '../actions';
@@ -22,7 +22,7 @@ export default async function ListsPage({
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   };
 
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const direction: PageDirection = one('dir') === 'backward' ? 'backward' : 'forward';
 
   const page = await listContactLists(workspaceId, {
@@ -34,8 +34,8 @@ export default async function ListsPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Lists</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
-          Groups of contacts. A list is who a campaign will go to, once campaigns exist.
+        <p className="text-sm text-(--color-muted-foreground)">
+          Groups of contacts. A campaign is sent to one list.
         </p>
       </div>
 
@@ -69,7 +69,7 @@ export default async function ListsPage({
                 <TR key={list.id}>
                   <TD className="font-medium">{list.name}</TD>
                   <TD>{list.contact_count}</TD>
-                  <TD className="whitespace-nowrap text-[--color-muted-foreground]">
+                  <TD className="whitespace-nowrap text-(--color-muted-foreground)">
                     {new Date(list.created_at).toLocaleDateString()}
                   </TD>
                   <TD className="text-right">

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const TONES = {
-  neutral: 'bg-[--color-muted] text-[--color-muted-foreground]',
+  neutral: 'bg-(--color-muted) text-(--color-muted-foreground)',
   positive: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
   danger: 'bg-red-500/10 text-red-700 dark:text-red-400',

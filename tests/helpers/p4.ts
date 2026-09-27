@@ -30,7 +30,7 @@ const TEMPLATE_COLUMNS =
 const CAMPAIGN_COLUMNS =
   'id, workspace_id, name, status::text as status, template_id, sender_identity_id, list_id, ' +
   'template_snapshot, scheduled_at, launched_at, completed_at, requires_unsubscribe, ' +
-  'max_rate_override, pause_reason, launched_by, execution_mode, n_total, n_sent, n_delivered, n_bounced, ' +
+  'max_rate_override, pause_reason, launched_by, execution_mode, approved_send_mode, n_total, n_sent, n_delivered, n_bounced, ' +
   'n_complained, n_failed, n_unsubscribed, n_suppressed, created_at, updated_at';
 
 function isUnique(err: unknown): boolean {
@@ -198,6 +198,15 @@ export function testCampaignRepository(
       return res.rows[0]?.display_timezone ?? 'UTC';
     },
 
+    async postalAddress() {
+      const res = await db.raw<{ postal_address: string | null }>(
+        `select postal_address from workspace_settings where workspace_id = $1`,
+        [workspaceId],
+      );
+      const value = res.rows[0]?.postal_address ?? null;
+      return value !== null && value.trim().length > 0 ? value : null;
+    },
+
     async getList(listId) {
       const res = await db.raw<ListSummary>(
         `select id, name, contact_count from contact_lists where workspace_id = $1 and id = $2`,
@@ -295,6 +304,10 @@ export function testCampaignRepository(
       if (patch.scheduledAt !== undefined) {
         params.push(patch.scheduledAt);
         sets.push(`scheduled_at = $${params.length}::timestamptz`);
+      }
+      if (patch.approvedSendMode !== undefined) {
+        params.push(patch.approvedSendMode);
+        sets.push(`approved_send_mode = $${params.length}`);
       }
 
       try {

@@ -66,6 +66,13 @@ const CUSTOM_KEY = /^[a-z][a-z0-9_]{0,39}$/;
 const TOKEN = /\{\{([^{}]*)\}\}/g;
 
 /**
+ * An opening or closing pair left over after every TOKEN is removed, with the
+ * text beside it (up to whitespace or a tag boundary) so the message can quote
+ * what the author typed.
+ */
+const STRAY = /\{\{[^\s<>{}]{0,40}|[^\s<>{}]{0,40}\}\}/;
+
+/**
  * Constructs that resemble a variable but are not one.
  *
  * Matched separately so the reported error can say "this is not supported"
@@ -155,6 +162,16 @@ export function scanVariables(source: string): VariableScan {
       seen.add(name);
       names.push(name);
     }
+  }
+
+  // Once every well-formed token is removed, no brace pair may remain. A tag
+  // that was never closed (`{{first_name`) or never opened (`first_name}}`)
+  // forms no token above, so without this it was saved and would have reached
+  // recipients literally.
+  const stray = STRAY.exec(source.replace(TOKEN, ' '));
+  if (stray !== null && !reported.has(stray[0])) {
+    reported.add(stray[0]);
+    problems.push({ kind: 'malformed', token: stray[0] });
   }
 
   return { names, problems };

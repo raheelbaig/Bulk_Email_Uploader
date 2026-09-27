@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Plus, Send } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listCampaigns, workspaceTimeZone } from '@/lib/campaigns/service';
 import { formatInZone } from '@/lib/campaigns/schedule';
 import { STATUS_LABEL, STATUS_TONE } from '@/lib/campaigns/status';
@@ -16,7 +16,7 @@ import { EmptyState, Table, TBody, TD, TH, THead, TR } from '@/components/ui/tab
 export const dynamic = 'force-dynamic';
 
 export default async function CampaignsPage() {
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const [page, timeZone] = await Promise.all([
     listCampaigns(workspaceId, { limit: 50 }),
     workspaceTimeZone(workspaceId),
@@ -26,7 +26,7 @@ export default async function CampaignsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Choose an audience, a sender and a template, run the checks, and schedule.
         </p>
       </div>
@@ -58,7 +58,7 @@ export default async function CampaignsPage() {
               />
               <span>
                 This campaign requires an unsubscribe link
-                <span className="block text-xs text-[--color-muted-foreground]">
+                <span className="block text-xs text-(--color-muted-foreground)">
                   Leave this on for anything marketing-related. Only transactional mail qualifies
                   to have it off.
                 </span>
@@ -95,12 +95,12 @@ export default async function CampaignsPage() {
                 <TD>
                   <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
                 </TD>
-                <TD className="text-[--color-muted-foreground]">
+                <TD className="text-(--color-muted-foreground)">
                   {campaign.scheduled_at === null
                     ? '—'
                     : formatInZone(campaign.scheduled_at, timeZone)}
                 </TD>
-                <TD className="text-[--color-muted-foreground]">
+                <TD className="text-(--color-muted-foreground)">
                   {formatInZone(campaign.created_at, timeZone)}
                 </TD>
               </TR>

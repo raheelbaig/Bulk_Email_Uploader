@@ -140,14 +140,17 @@ export async function scheduleCampaignAction(_prev: FormState, form: FormData): 
     const { workspaceId } = await currentWorkspace();
     const campaignId = text(form, 'campaignId');
 
-    await scheduleCampaign(workspaceId, campaignId);
+    const { campaign } = await scheduleCampaign(workspaceId, campaignId);
     refresh(campaignId);
 
-    return {
-      ok: true,
-      message:
-        'Campaign scheduled and its content frozen. It starts at the scheduled time if the sending mode of this deployment allows it — the campaign page says which mode is active.',
-    };
+    const approval =
+      campaign.approved_send_mode === 'live'
+        ? 'It is approved for LIVE sending and will be delivered to real recipients at the scheduled time.'
+        : campaign.approved_send_mode === 'dry_run'
+          ? 'It is approved for a dry run only: at the scheduled time it runs through the pipeline and nothing is delivered.'
+          : 'Sending is disabled, so it will not start. If sending is enabled later, it is held until you schedule it again.';
+
+    return { ok: true, message: `Campaign scheduled and its content frozen. ${approval}` };
   });
 }
 
@@ -163,18 +166,27 @@ export async function unscheduleCampaignAction(_prev: FormState, form: FormData)
   });
 }
 
-export async function cancelCampaignAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  const campaignId = String(form.get('campaignId') ?? '');
-  await cancelCampaign(workspaceId, campaignId);
-  refresh(campaignId);
+// Cancel and delete return a FormState so a refusal — the worker moved the
+// campaign on since the page rendered — is shown as a message rather than
+// thrown into the error boundary.
+
+export async function cancelCampaignAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:cancelCampaign', async () => {
+    const { workspaceId } = await currentWorkspace();
+    const campaignId = text(form, 'campaignId');
+    await cancelCampaign(workspaceId, campaignId);
+    refresh(campaignId);
+    return { ok: true, message: 'Campaign cancelled. Nothing further will be sent.' };
+  });
 }
 
-export async function deleteCampaignAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  await deleteCampaign(workspaceId, String(form.get('campaignId') ?? ''));
-  revalidatePath('/campaigns');
-  redirect('/campaigns');
+export async function deleteCampaignAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:deleteCampaign', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await deleteCampaign(workspaceId, text(form, 'campaignId'));
+    revalidatePath('/campaigns');
+    redirect('/campaigns');
+  });
 }
 
 export async function pauseSendingAction(_prev: FormState, form: FormData): Promise<FormState> {

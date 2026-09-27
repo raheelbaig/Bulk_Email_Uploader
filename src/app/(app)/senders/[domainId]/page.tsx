@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { getSenderDomain } from '@/lib/sender/service';
 import { isAppError } from '@/lib/errors';
 import { READINESS_LABEL, READINESS_TONE } from '@/lib/sender/status';
@@ -31,7 +31,7 @@ export default async function SenderDomainPage({
   params: Promise<{ domainId: string }>;
 }) {
   const { domainId } = await params;
-  const { workspaceId, role } = await currentWorkspace();
+  const { workspaceId, role } = await workspaceForPage();
 
   const view = await getSenderDomain(workspaceId, domainId).catch((err: unknown) => {
     // Not-yours and not-found are the same answer, here as in the service.
@@ -52,7 +52,7 @@ export default async function SenderDomainPage({
       <div>
         <Link
           href="/senders"
-          className="mb-2 inline-flex items-center gap-1 text-sm text-[--color-muted-foreground] underline underline-offset-4"
+          className="mb-2 inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
         >
           <ArrowLeft className="h-3 w-3" aria-hidden />
           Sender domains
@@ -61,7 +61,7 @@ export default async function SenderDomainPage({
           <h1 className="text-2xl font-semibold tracking-tight">{record.domain}</h1>
           <Badge tone={READINESS_TONE[view.readiness]}>{READINESS_LABEL[view.readiness]}</Badge>
         </div>
-        <p className="mt-1 text-sm text-[--color-muted-foreground]">{view.summary}</p>
+        <p className="mt-1 text-sm text-(--color-muted-foreground)">{view.summary}</p>
       </div>
 
       <Card>
@@ -76,7 +76,7 @@ export default async function SenderDomainPage({
           )}
 
           {record.dmarc_status !== 'verified' && (
-            <p className="text-sm text-[--color-muted-foreground]">
+            <p className="text-sm text-(--color-muted-foreground)">
               {record.dmarc_status === 'not_configured'
                 ? DMARC_GUIDANCE.missing
                 : record.dmarc_status === 'failed'
@@ -94,7 +94,7 @@ export default async function SenderDomainPage({
             >
               <input type="hidden" name="domainId" value={record.id} />
             </ActionForm>
-            <span className="text-xs text-[--color-muted-foreground]">
+            <span className="text-xs text-(--color-muted-foreground)">
               {record.last_checked_at === null
                 ? 'Not checked yet.'
                 : `Last checked ${new Date(record.last_checked_at).toLocaleString()}.`}
@@ -106,7 +106,7 @@ export default async function SenderDomainPage({
       <Card>
         <CardHeader>
           <CardTitle>DNS records</CardTitle>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             Add these at your DNS provider. Changes can take up to 72 hours to propagate, though
             they are usually visible within an hour.
           </p>
@@ -137,7 +137,7 @@ export default async function SenderDomainPage({
         <Card>
           <CardHeader>
             <CardTitle>Remove this domain</CardTitle>
-            <p className="text-sm text-[--color-muted-foreground]">
+            <p className="text-sm text-(--color-muted-foreground)">
               {view.identityCount > 0
                 ? `This domain still has ${view.identityCount} sender ${
                     view.identityCount === 1 ? 'address' : 'addresses'
@@ -146,17 +146,20 @@ export default async function SenderDomainPage({
             </p>
           </CardHeader>
           <CardContent>
-            <form action={removeDomainAction}>
-              <input type="hidden" name="domainId" value={record.id} />
-              <Button
-                type="submit"
-                variant="destructive"
-                size="sm"
-                disabled={view.identityCount > 0}
-              >
+            {view.identityCount > 0 ? (
+              <Button type="button" variant="destructive" size="sm" disabled>
                 Remove domain
               </Button>
-            </form>
+            ) : (
+              <ActionForm
+                action={removeDomainAction}
+                submitLabel="Remove domain"
+                pendingLabel="Removing…"
+                variant="destructive"
+              >
+                <input type="hidden" name="domainId" value={record.id} />
+              </ActionForm>
+            )}
           </CardContent>
         </Card>
       )}
@@ -185,11 +188,11 @@ function RecordGroup({
     <div className="flex flex-col gap-3">
       <div>
         <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-[--color-muted-foreground]">{description}</p>
+        <p className="text-xs text-(--color-muted-foreground)">{description}</p>
       </div>
 
       {records.length === 0 ? (
-        empty.length > 0 && <p className="text-xs text-[--color-muted-foreground]">{empty}</p>
+        empty.length > 0 && <p className="text-xs text-(--color-muted-foreground)">{empty}</p>
       ) : (
         <div className="flex flex-col gap-3">
           {records.map((dns) => (
@@ -198,7 +201,7 @@ function RecordGroup({
                 <Badge>{dns.type}</Badge>
                 {dns.label}
                 {dns.priority !== undefined && (
-                  <span className="text-[--color-muted-foreground]">priority {dns.priority}</span>
+                  <span className="text-(--color-muted-foreground)">priority {dns.priority}</span>
                 )}
               </div>
               <RecordLine label="Host" value={dns.host} />
@@ -214,7 +217,7 @@ function RecordGroup({
 function RecordLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-2 py-0.5">
-      <span className="w-12 shrink-0 text-xs text-[--color-muted-foreground]">{label}</span>
+      <span className="w-12 shrink-0 text-xs text-(--color-muted-foreground)">{label}</span>
       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs">{value}</code>
       <CopyButton value={value} label={label.toLowerCase()} />
     </div>

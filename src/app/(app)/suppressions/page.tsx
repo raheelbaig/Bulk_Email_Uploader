@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ShieldBan } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import {
   listSuppressions,
   SUPPRESSION_REASONS,
@@ -46,7 +46,7 @@ export default async function SuppressionsPage({
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   };
 
-  const { workspaceId, role } = await currentWorkspace();
+  const { workspaceId, role } = await workspaceForPage();
   const canRemove = role === 'owner' || role === 'admin';
 
   const search = one('q');
@@ -64,7 +64,7 @@ export default async function SuppressionsPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Suppressions</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Addresses this workspace will never email. Checked on every send, not just at import.
         </p>
       </div>
@@ -107,7 +107,7 @@ export default async function SuppressionsPage({
 
       <form method="get" className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="q" className="text-xs font-medium text-[--color-muted-foreground]">
+          <label htmlFor="q" className="text-xs font-medium text-(--color-muted-foreground)">
             Search
           </label>
           <Input
@@ -119,7 +119,7 @@ export default async function SuppressionsPage({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="reason" className="text-xs font-medium text-[--color-muted-foreground]">
+          <label htmlFor="reason" className="text-xs font-medium text-(--color-muted-foreground)">
             Reason
           </label>
           <Select id="reason" name="reason" defaultValue={reason ?? ''}>
@@ -145,7 +145,7 @@ export default async function SuppressionsPage({
         <EmptyState>
           {search !== undefined || reason !== undefined
             ? 'No suppressions match those filters.'
-            : 'No suppressed addresses. Bounces and complaints will appear here automatically once sending is enabled.'}
+            : 'No suppressed addresses. Unsubscribes appear here automatically. Bounces and complaints reported by Amazon SES are not recorded here yet — that processing is still to be built.'}
         </EmptyState>
       ) : (
         <>
@@ -170,8 +170,8 @@ export default async function SuppressionsPage({
                         {record.reason.replace(/_/g, ' ')}
                       </Badge>
                     </TD>
-                    <TD className="text-[--color-muted-foreground]">{record.source}</TD>
-                    <TD className="whitespace-nowrap text-[--color-muted-foreground]">
+                    <TD className="text-(--color-muted-foreground)">{record.source}</TD>
+                    <TD className="whitespace-nowrap text-(--color-muted-foreground)">
                       {new Date(record.created_at).toLocaleDateString()}
                     </TD>
                     <TD className="text-right">
@@ -187,7 +187,7 @@ export default async function SuppressionsPage({
                         </ActionForm>
                       ) : (
                         <span
-                          className="text-xs text-[--color-muted-foreground]"
+                          className="text-xs text-(--color-muted-foreground)"
                           title={
                             isReversible(record.reason)
                               ? 'Only an owner or admin can remove a suppression.'

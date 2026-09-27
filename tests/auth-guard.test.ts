@@ -19,8 +19,14 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }));
 
+vi.mock('next/navigation', () => ({
+  redirect: (to: string) => {
+    throw Object.assign(new Error(`NEXT_REDIRECT ${to}`), { digest: 'NEXT_REDIRECT' });
+  },
+}));
+
 const { requireUser, getCurrentUser } = await import('@/lib/auth/session');
-const { requireWorkspace, currentWorkspace } = await import('@/lib/auth/workspace');
+const { requireWorkspace, currentWorkspace, workspaceForPage } = await import('@/lib/auth/workspace');
 const { UnauthenticatedError, ForbiddenError } = await import('@/lib/errors');
 
 const USER = { id: '11111111-1111-1111-1111-111111111111', email: 'a@example.test' };
@@ -159,5 +165,52 @@ describe('currentWorkspace', () => {
   it('denies a user with no workspace rather than inventing one', async () => {
     fromMock.mockReturnValue(queryReturning({ data: null, error: null }));
     await expect(currentWorkspace()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+/**
+ * Regression (final QA pass): an expired session during client-side navigation
+ * showed "Something went wrong" instead of the sign-in page. Next.js does not
+ * re-render the shared (app) layout on a soft navigation, so the layout's
+ * redirect never ran; the page's own `currentWorkspace()` threw into the error
+ * boundary. Pages now use `workspaceForPage()`, which redirects.
+ */
+describe('workspaceForPage', () => {
+  it('redirects to /login when there is no session', async () => {
+    authGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    await expect(workspaceForPage()).rejects.toThrow('NEXT_REDIRECT /login');
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a signed-in user with no workspace (no redirect loop to /login)', async () => {
+    authGetUser.mockResolvedValue({ data: { user: USER }, error: null });
+    fromMock.mockReturnValue(queryReturning({ data: null, error: null }));
+    await expect(workspaceForPage()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('resolves the workspace for a signed-in member', async () => {
+    authGetUser.mockResolvedValue({ data: { user: USER }, error: null });
+    fromMock.mockReturnValue(queryReturning({ data: { workspace_id: WORKSPACE, role: 'member' }, error: null }));
+    await expect(workspaceForPage()).resolves.toEqual({ userId: USER.id, workspaceId: WORKSPACE, role: 'member' });
+  });
+
+  it('every protected page resolves its workspace through it, not the throwing variant', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const pages: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (name === 'page.tsx') pages.push(path);
+      }
+    };
+    walk(join(process.cwd(), 'src', 'app', '(app)'));
+    expect(pages.length).toBeGreaterThanOrEqual(16);
+    for (const page of pages) {
+      const source = readFileSync(page, 'utf8');
+      expect(source, page).toContain('await workspaceForPage()');
+      expect(source, page).not.toMatch(/\bcurrentWorkspace\(\)|\brequireUser\(\)/);
+    }
   });
 });

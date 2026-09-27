@@ -42,6 +42,12 @@ export interface CampaignRecord {
   launched_by: string | null;
   /** Stamped at launch, once. Null until then (migration 0010). */
   execution_mode: 'dry_run' | 'live' | null;
+  /**
+   * The deployment's sending mode when a person scheduled this campaign. It may
+   * launch only in this mode; null (a draft, or scheduled before 0012) matches
+   * none, so such a campaign cannot launch (migration 0012).
+   */
+  approved_send_mode: 'disabled' | 'dry_run' | 'live' | null;
   n_total: number;
   n_sent: number;
   n_delivered: number;
@@ -69,6 +75,8 @@ export interface CampaignDraftPatch {
 export interface TransitionPatch {
   templateSnapshot?: unknown;
   scheduledAt?: string | null;
+  /** Written only by the validating → scheduled transition (migration 0012). */
+  approvedSendMode?: 'disabled' | 'dry_run' | 'live';
 }
 
 export interface CampaignListOptions {
@@ -94,6 +102,12 @@ export interface CampaignRepository {
    * the scheduling path would have to reach for separately.
    */
   timeZone(): Promise<string>;
+
+  /**
+   * The workspace's postal address for the footer of bulk mail, or null when
+   * none is configured (migration 0014).
+   */
+  postalAddress(): Promise<string | null>;
 
   /** One list, or null when it is not this workspace's. */
   getList(listId: string): Promise<ListSummary | null>;

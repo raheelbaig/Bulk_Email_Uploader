@@ -3,7 +3,7 @@
 import { after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { currentWorkspace } from '@/lib/auth/workspace';
-import { isAppError } from '@/lib/errors';
+import { isAppError, ValidationError } from '@/lib/errors';
 import { logger } from '@/lib/observability/logger';
 import { newRequestId, runWithContext } from '@/lib/observability/context';
 import {
@@ -15,7 +15,7 @@ import {
   type InspectionResult,
 } from '@/lib/imports/service';
 import { sweepStagedFiles } from '@/lib/imports/lifecycle';
-import { columnMappingSchema } from '@/lib/imports/mapping';
+import { columnMappingSchema, MAPPING_PROBLEM_MESSAGE } from '@/lib/imports/mapping';
 
 /**
  * Server actions for the import flow.
@@ -37,8 +37,6 @@ export interface ImportActionState {
   /** Present after a successful inspect, for the mapping screen. */
   inspection?: InspectionResult;
 }
-
-export const IMPORT_IDLE: ImportActionState = { ok: false, message: null };
 
 async function run(
   route: string,
@@ -107,7 +105,9 @@ export async function confirmMappingAction(input: {
 
     // Parsed here as well as in the service so a malformed payload is a clear
     // validation error rather than a cast that fails deeper in.
-    const mapping = columnMappingSchema.parse(input.mapping);
+    const shape = columnMappingSchema.safeParse(input.mapping);
+    if (!shape.success) throw new ValidationError(MAPPING_PROBLEM_MESSAGE.invalid_shape, shape.error);
+    const mapping = shape.data;
 
     await confirmMapping(workspaceId, input.importId, mapping, input.targetListId);
 

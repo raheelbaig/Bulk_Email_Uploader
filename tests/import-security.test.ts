@@ -522,6 +522,11 @@ describe('the rate limiter', () => {
     // The full set is asserted too, so a limiter added by a later phase is a
     // deliberate edit here rather than something that appears unreviewed.
     expect(Object.keys(RATE_LIMITS).sort()).toEqual([
+      // QA pass 2 — unauthenticated entry points, keyed by a hashed subject:
+      // per account (the control that cannot be dodged) and per client.
+      'auth.sign_in_account',
+      'auth.sign_in_ip',
+      'auth.sign_up_ip',
       // P4 — campaign preparation. Preflight is the tightest of the three
       // because each run counts a whole audience; editing content is loose,
       // because it exists to bound a script, not to interrupt a person writing.

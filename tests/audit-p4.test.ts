@@ -118,6 +118,7 @@ describe('P4 audit logging', () => {
           pause_reason: null,
           launched_by: null,
           execution_mode: null,
+          approved_send_mode: null,
           n_total: 0,
           n_sent: 0,
           n_delivered: 0,

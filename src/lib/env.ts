@@ -1,5 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
+import { APP_ENVIRONMENTS } from '@/lib/environment';
 
 /**
  * Server-side environment.
@@ -27,6 +28,11 @@ const serverSchema = z.object({
   DATABASE_URL: z.string().min(1).optional(),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  // Which environment this deployment is. Defaults to development, which is
+  // never production: live sending requires `production` (lib/sending/gate), and
+  // every non-production deployment shows a banner. See lib/environment.ts.
+  APP_ENVIRONMENT: z.enum(APP_ENVIRONMENTS).default('development'),
 
   // ── P3: Amazon SES, sender configuration only ─────────────────────────────
   //
@@ -87,6 +93,15 @@ const serverSchema = z.object({
   RECONCILE_GRACE_MINUTES: z.coerce.number().int().min(10).max(1440).default(30),
   UNCERTAIN_ATTEMPT_POLICY: z.enum(['hold', 'redispatch']).default('hold'),
   SCHEDULE_GRACE_MINUTES: z.coerce.number().int().min(1).max(10080).default(120),
+
+  // Migration 0013. Messages per workspace per UTC day, across every campaign.
+  // Deliberately low by default: a new sending domain has no reputation, and
+  // warm-up is done by raising this on a schedule (docs/adr/0004), never by
+  // finding out what the provider's quota allows.
+  SEND_DAILY_CAP: z.coerce.number().int().min(1).max(1_000_000).default(200),
+  // Migration 0013. A recipient sent to by one campaign is skipped by any other
+  // campaign for this long. 0 disables the cooldown.
+  CONTACT_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(720).default(24),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;

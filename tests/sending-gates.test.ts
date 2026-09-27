@@ -69,6 +69,7 @@ const CONFIG_CLIENT = 'src/lib/sender/provider/ses/client.ts';
 const PROVIDER_FACTORY = 'src/lib/sending/provider/index.ts';
 const WORKER_ROUTE = 'src/app/api/internal/worker/tick/route.ts';
 const UNSUBSCRIBE_ROUTE = 'src/app/u/[token]/route.ts';
+const AUTH_CONFIRM_ROUTE = 'src/app/auth/confirm/route.ts';
 
 describe('there is one send path, and nothing else can deliver', () => {
   it('no email SDK, SMTP library or external queue is installed', () => {
@@ -200,6 +201,7 @@ describe('the send path is closed by default', () => {
     SUPABASE_SERVICE_ROLE_KEY: 'service-role-key-service-role',
   };
   const fullLive = {
+    APP_ENVIRONMENT: 'production',
     AWS_REGION: 'eu-west-1',
     AWS_ACCESS_KEY_ID: 'AKIDEXAMPLEEXAMPLE00',
     AWS_SECRET_ACCESS_KEY: 'secret-secret-secret-secret-secret',
@@ -318,8 +320,19 @@ describe('entry points', () => {
         // P5: the scheduler's entry point and the public unsubscribe link.
         WORKER_ROUTE,
         UNSUBSCRIBE_ROUTE,
+        // The landing point for Supabase Auth email links (signup confirmation).
+        AUTH_CONFIRM_ROUTE,
       ].sort(),
     );
+  });
+
+  it('the auth confirmation route is GET-only and redirects only to fixed paths', () => {
+    const code = codeOf(join(process.cwd(), AUTH_CONFIRM_ROUTE));
+    expect(code).toMatch(/export async function GET\(/);
+    expect(code).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)\(/);
+    const targets = [...code.matchAll(/NextResponse\.redirect\(new URL\(([^,]+),/g)].map((m) => m[1]);
+    expect(targets).toEqual(["'/dashboard'", "'/login?notice=confirm-failed'"]);
+    expect(code).not.toMatch(/get\(['"](next|redirect_to|returnTo)['"]\)/);
   });
 
   it('the worker endpoint is POST-only and authenticates before doing anything', () => {

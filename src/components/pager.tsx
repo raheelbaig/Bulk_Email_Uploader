@@ -37,7 +37,7 @@ export function Pager({
 
   return (
     <div className="flex items-center justify-between gap-4">
-      <p className="text-xs text-[--color-muted-foreground]">
+      <p className="text-xs text-(--color-muted-foreground)">
         Showing {showing} {showing === 1 ? 'row' : 'rows'}
       </p>
       <div className="flex items-center gap-2">

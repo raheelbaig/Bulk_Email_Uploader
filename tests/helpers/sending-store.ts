@@ -20,7 +20,7 @@ import type { CampaignContext, ClaimedJob, SendingStore } from '@/lib/sending/po
 const CAMPAIGN_COLUMNS =
   'id, workspace_id, name, status::text as status, template_id, sender_identity_id, list_id, ' +
   'template_snapshot, scheduled_at, launched_at, completed_at, requires_unsubscribe, ' +
-  'max_rate_override, pause_reason, launched_by, execution_mode, n_total, n_sent, n_delivered, ' +
+  'max_rate_override, pause_reason, launched_by, execution_mode, approved_send_mode, n_total, n_sent, n_delivered, ' +
   'n_bounced, n_complained, n_failed, n_unsubscribed, n_suppressed, created_at, updated_at';
 
 function iso(value: unknown): string | null {
@@ -127,7 +127,14 @@ export function testSendingStore(db: TestDb): SendingStore {
         campaign.sender_identity_id === null ? null : await senders.getIdentity(campaign.sender_identity_id);
       const senderDomain = senderIdentity === null ? null : await senders.getDomain(senderIdentity.domain_id);
 
-      return { campaign, list, audience, senderIdentity, senderDomain };
+      const settings = await one<{ postal_address: string | null }>(
+        `select postal_address from workspace_settings where workspace_id = $1`,
+        [workspaceId],
+      );
+      const address = settings?.postal_address ?? null;
+      const postalAddress = address !== null && address.trim().length > 0 ? address : null;
+
+      return { campaign, list, audience, senderIdentity, senderDomain, postalAddress };
     },
 
     async promoteCampaign({ workspaceId, campaignId }, mode) {
@@ -155,16 +162,27 @@ export function testSendingStore(db: TestDb): SendingStore {
       return n === null || n === undefined ? null : Number(n);
     },
 
-    async reserveBudget(workspaceId, perMinute, requested) {
+    async reserveBudget(workspaceId, perMinute, requested, dailyCap) {
       return Number(
-        (await one<{ n: number }>(`select sending_reserve_budget($1, $2, $3) as n`, [workspaceId, perMinute, requested]))?.n ?? 0,
+        (
+          await one<{ n: number }>(`select sending_reserve_budget($1, $2, $3, $4) as n`, [
+            workspaceId,
+            perMinute,
+            requested,
+            dailyCap,
+          ])
+        )?.n ?? 0,
       );
     },
 
-    async claimJobs({ workspaceId, campaignId }, limit): Promise<ClaimedJob[]> {
+    async refundBudget(workspaceId, unused) {
+      await q(`select sending_refund_budget($1, $2)`, [workspaceId, unused]);
+    },
+
+    async claimJobs({ workspaceId, campaignId }, limit, cooldownMinutes): Promise<ClaimedJob[]> {
       const rows = await q<{ id: string; contact_id: string | null; to_email: string; merge_data: unknown; attempts: number }>(
-        `select * from sending_claim_jobs($1, $2, $3)`,
-        [workspaceId, campaignId, limit],
+        `select * from sending_claim_jobs($1, $2, $3, $4)`,
+        [workspaceId, campaignId, limit, cooldownMinutes],
       );
       return rows.map((row) => ({
         id: row.id,

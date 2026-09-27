@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { requireWorkspace } from '@/lib/auth/workspace';
 import { normalizeEmail, NORMALIZE_FAILURE_MESSAGE } from '@/lib/email/normalize';
-import { ValidationError, ConflictError, ForbiddenError, InternalError } from '@/lib/errors';
+import { ValidationError, ConflictError, ForbiddenError, InternalError, parseInput } from '@/lib/errors';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -187,7 +187,7 @@ export async function getContact(workspaceId: string, contactId: string): Promis
 
 export async function createContact(workspaceId: string, input: ContactInput): Promise<Contact> {
   const access = await requireWorkspace(workspaceId);
-  const parsed = contactInputSchema.parse(input);
+  const parsed = parseInput(contactInputSchema, input);
   const email = normalizeOrThrow(parsed.email);
 
   const supabase = await createSupabaseServerClient();
@@ -244,7 +244,7 @@ export async function updateContact(
   input: ContactInput,
 ): Promise<Contact> {
   const access = await requireWorkspace(workspaceId);
-  const parsed = contactInputSchema.parse(input);
+  const parsed = parseInput(contactInputSchema, input);
   const email = normalizeOrThrow(parsed.email);
 
   const supabase = await createSupabaseServerClient();

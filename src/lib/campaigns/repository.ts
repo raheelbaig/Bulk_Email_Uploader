@@ -16,6 +16,9 @@ import type {
 } from './ports';
 import type { CampaignStatus } from './status';
 
+/** A malformed id matches no row; checked here so it never reaches SQL as a 22P02. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * The production campaign repository.
  *
@@ -42,7 +45,7 @@ import type { CampaignStatus } from './status';
 const COLUMNS =
   'id, workspace_id, name, status, template_id, sender_identity_id, list_id, ' +
   'template_snapshot, scheduled_at, launched_at, completed_at, requires_unsubscribe, ' +
-  'max_rate_override, pause_reason, launched_by, execution_mode, n_total, n_sent, n_delivered, ' +
+  'max_rate_override, pause_reason, launched_by, execution_mode, approved_send_mode, n_total, n_sent, n_delivered, ' +
   'n_bounced, n_complained, n_failed, n_unsubscribed, n_suppressed, created_at, updated_at';
 
 const LIST_COLUMNS = 'id, name, contact_count';
@@ -93,6 +96,7 @@ export async function campaignRepository(workspaceId: string): Promise<CampaignR
   };
 
   const getCampaign = async (campaignId: string): Promise<CampaignRecord | null> => {
+    if (!UUID.test(campaignId)) return null;
     const { data, error } = await supabase
       .from('campaigns')
       .select(COLUMNS)
@@ -120,6 +124,17 @@ export async function campaignRepository(workspaceId: string): Promise<CampaignR
       if (error !== null || data === null) return 'UTC';
       const value = data.display_timezone;
       return typeof value === 'string' && value.length > 0 ? value : 'UTC';
+    },
+
+    async postalAddress() {
+      const { data, error } = await supabase
+        .from('workspace_settings')
+        .select('postal_address')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+      if (error !== null) fail('postalAddress', error);
+      const value: unknown = data?.postal_address;
+      return typeof value === 'string' && value.trim().length > 0 ? value : null;
     },
 
     async getList(listId) {
@@ -230,6 +245,7 @@ export async function campaignRepository(workspaceId: string): Promise<CampaignR
       const payload: Record<string, unknown> = { status: to };
       if (patch.templateSnapshot !== undefined) payload['template_snapshot'] = patch.templateSnapshot;
       if (patch.scheduledAt !== undefined) payload['scheduled_at'] = patch.scheduledAt;
+      if (patch.approvedSendMode !== undefined) payload['approved_send_mode'] = patch.approvedSendMode;
 
       // The compare-and-set: `.in('status', from)` is what makes this safe under
       // concurrency. `serviceForWorkspace` adds the tenant filter and refuses to

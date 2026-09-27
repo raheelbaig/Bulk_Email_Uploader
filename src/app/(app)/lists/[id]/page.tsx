@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { getContactList } from '@/lib/lists/service';
 import { listContacts } from '@/lib/contacts/service';
 import { isAppError } from '@/lib/errors';
@@ -9,7 +9,6 @@ import { renameListAction, deleteListAction, removeListMemberAction } from '../.
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Table, THead, TBody, TR, TH, TD, EmptyState } from '@/components/ui/table';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -17,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ListDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
 
   let list;
   try {
@@ -36,13 +35,13 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
       <div>
         <Link
           href="/lists"
-          className="inline-flex items-center gap-1 text-sm text-[--color-muted-foreground] underline underline-offset-4"
+          className="inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           Lists
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{list.name}</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           {list.contact_count} {list.contact_count === 1 ? 'contact' : 'contacts'}
         </p>
       </div>
@@ -76,13 +75,16 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
                     </Badge>
                   </TD>
                   <TD className="text-right">
-                    <form action={removeListMemberAction}>
+                    <ActionForm
+                      action={removeListMemberAction}
+                      submitLabel="Remove"
+                      pendingLabel="Removing…"
+                      variant="ghost"
+                      className="flex flex-col items-end gap-1"
+                    >
                       <input type="hidden" name="listId" value={list.id} />
                       <input type="hidden" name="contactId" value={contact.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Remove
-                      </Button>
-                    </form>
+                    </ActionForm>
                   </TD>
                 </TR>
               );
@@ -92,7 +94,7 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {members.hasMore && (
-        <p className="text-xs text-[--color-muted-foreground]">Showing the first 100 members.</p>
+        <p className="text-xs text-(--color-muted-foreground)">Showing the first 100 members.</p>
       )}
 
       <Card>
@@ -115,12 +117,14 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={deleteListAction}>
+          <ActionForm
+            action={deleteListAction}
+            submitLabel="Delete list"
+            pendingLabel="Deleting…"
+            variant="destructive"
+          >
             <input type="hidden" name="listId" value={list.id} />
-            <Button type="submit" variant="destructive" size="sm">
-              Delete list
-            </Button>
-          </form>
+          </ActionForm>
         </CardContent>
       </Card>
     </div>

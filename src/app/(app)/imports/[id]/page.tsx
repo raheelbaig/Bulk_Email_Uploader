@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Download, RefreshCw } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { getImport, listRejections } from '@/lib/imports/service';
 import { isAppError } from '@/lib/errors';
 import { ROW_BUCKETS, BUCKET_LABEL } from '@/lib/imports/constants';
@@ -28,12 +28,13 @@ export default async function ImportDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
 
   const record = await getImport(workspaceId, id).catch((err: unknown) => {
     // A forbidden import and a nonexistent one are the same answer, so an id
-    // from another workspace cannot be distinguished from a typo.
-    if (isAppError(err) && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND')) notFound();
+    // from another workspace cannot be distinguished from a typo — nor can a
+    // malformed id.
+    if (isAppError(err) && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND' || err.code === 'VALIDATION_FAILED')) notFound();
     throw err;
   });
 
@@ -61,7 +62,7 @@ export default async function ImportDetailPage({
             ← All imports
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{record.filename}</h1>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             {(record.byte_size / 1024).toFixed(0)} KB ·{' '}
             {record.target_list_name === null
               ? 'no target list'
@@ -113,7 +114,7 @@ export default async function ImportDetailPage({
             <div key={bucket} className="flex items-center justify-between px-4 py-2.5">
               <dt className="text-sm">
                 {BUCKET_LABEL[bucket]}
-                <span className="ml-2 text-xs text-[--color-muted-foreground]">
+                <span className="ml-2 text-xs text-(--color-muted-foreground)">
                   {BUCKET_EXPLANATION[bucket]}
                 </span>
               </dt>
@@ -121,7 +122,7 @@ export default async function ImportDetailPage({
             </div>
           ))}
         </dl>
-        <div className="border-t px-4 py-2.5 text-xs text-[--color-muted-foreground]">
+        <div className="border-t px-4 py-2.5 text-xs text-(--color-muted-foreground)">
           {reconciles
             ? 'Every row is accounted for in exactly one category.'
             : 'This import is still running — the categories will add up to the total when it finishes.'}
@@ -153,12 +154,12 @@ export default async function ImportDetailPage({
                 <TR key={rejection.id}>
                   <TD className="tabular-nums">{rejection.row_number}</TD>
                   <TD>{BUCKET_LABEL[rejection.bucket]}</TD>
-                  <TD className="text-[--color-muted-foreground]">{rejection.reason}</TD>
+                  <TD className="text-(--color-muted-foreground)">{rejection.reason}</TD>
                 </TR>
               ))}
             </TBody>
           </Table>
-          <p className="text-xs text-[--color-muted-foreground]">
+          <p className="text-xs text-(--color-muted-foreground)">
             The download includes the original cells for each row so you can correct and
             re-upload them. Values are escaped so the file cannot run anything when opened in a
             spreadsheet.
@@ -170,7 +171,7 @@ export default async function ImportDetailPage({
         <EmptyState>Every row imported cleanly.</EmptyState>
       )}
 
-      <p className="flex items-center gap-1.5 text-xs text-[--color-muted-foreground]">
+      <p className="flex items-center gap-1.5 text-xs text-(--color-muted-foreground)">
         <RefreshCw className="h-3 w-3" aria-hidden />
         The uploaded file was deleted from storage when this import finished.
       </p>

@@ -6,8 +6,18 @@ export function describeTarget(url: string): {
   port: string | null;
   database: string | null;
   local: boolean;
+  projectRef: string | null;
 };
-export function parseArgs(argv: string[]): { dryRun: boolean; yesProduction: boolean; unknown: string[] };
+export function supabaseProjectRef(url: URL): string | null;
+export interface MigrateArgs {
+  dryRun: boolean;
+  yesProduction: boolean;
+  confirmProduction: boolean;
+  projectRef: string | null;
+  unknown: string[];
+}
+export function parseArgs(argv: string[]): MigrateArgs;
+export function applyRefusal(target: ReturnType<typeof describeTarget>, args: MigrateArgs): string | null;
 export function loadEnvLocal(path: string): boolean;
 export const MIGRATION_LOCK_KEY: number;
 export const TRACKING_TABLE_SQL: string;

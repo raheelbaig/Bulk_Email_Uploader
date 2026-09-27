@@ -9,6 +9,8 @@
  * a server log line without exposing anything about the failure itself.
  */
 
+import type { z } from 'zod';
+
 export type ErrorCode =
   | 'UNAUTHENTICATED'
   | 'FORBIDDEN'
@@ -103,6 +105,21 @@ export class InternalError extends AppError {
 
 export function isAppError(err: unknown): err is AppError {
   return err instanceof AppError;
+}
+
+/**
+ * Parses user input, throwing a `ValidationError` that carries the schema's own
+ * message for the first problem.
+ *
+ * `schema.parse()` throws a raw ZodError, which is not an AppError: every action
+ * wrapper and route turned it into "Something went wrong on our side" (or a 500)
+ * and logged a user's typo as a server fault. The schemas' messages ("Give the
+ * list a name.") were written to be shown — this is what shows them.
+ */
+export function parseInput<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  throw new ValidationError(result.error.issues[0]?.message ?? 'That input is not valid.', result.error);
 }
 
 export interface SafeErrorBody {

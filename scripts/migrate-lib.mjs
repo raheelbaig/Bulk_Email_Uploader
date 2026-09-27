@@ -45,20 +45,77 @@ export function describeTarget(url) {
       port: u.port || '5432',
       database: decodeURIComponent(u.pathname.replace(/^\//, '')) || 'postgres',
       local: LOCAL_HOSTS.has(host),
+      projectRef: supabaseProjectRef(u),
     };
   } catch {
-    return { host: null, port: null, database: null, local: false };
+    return { host: null, port: null, database: null, local: false, projectRef: null };
   }
 }
 
+/**
+ * The Supabase project a connection string points at, or null.
+ *
+ * Every project in a region shares one pooler host, so the host alone cannot
+ * say which project is about to change. The ref can: the pooler's user is
+ * `postgres.<ref>`, and a direct connection's host is `db.<ref>.supabase.co`.
+ * The ref is not a secret — it is in the public NEXT_PUBLIC_SUPABASE_URL — so
+ * it may be printed; the rest of the username and the password never are.
+ */
+export function supabaseProjectRef(u) {
+  const direct = /^db\.([a-z0-9]{15,30})\.supabase\.co$/.exec(u.hostname);
+  if (direct) return direct[1];
+  if (/\.pooler\.supabase\.com$/.test(u.hostname)) {
+    const pooled = /^postgres\.([a-z0-9]{15,30})$/.exec(decodeURIComponent(u.username));
+    if (pooled) return pooled[1];
+  }
+  return null;
+}
+
 export function parseArgs(argv) {
-  const known = new Set(['--dry-run', '--yes-production']);
-  const unknown = argv.filter((a) => !known.has(a));
+  const known = new Set(['--dry-run', '--yes-production', '--confirm-production']);
+  const refArg = argv.find((a) => a.startsWith('--project-ref='));
+  const unknown = argv.filter((a) => !known.has(a) && a !== refArg);
   return {
     dryRun: argv.includes('--dry-run'),
     yesProduction: argv.includes('--yes-production'),
+    confirmProduction: argv.includes('--confirm-production'),
+    projectRef: refArg === undefined ? null : refArg.slice('--project-ref='.length),
     unknown,
   };
+}
+
+/**
+ * Whether an apply (not a dry run) may proceed. Null when it may, otherwise the
+ * reason. Every rule for remote targets lives here so it can be tested. There
+ * is one real database, so any non-local target is treated as production:
+ *
+ *   1. --yes-production is required for any non-local database;
+ *   2. --project-ref must name the project DATABASE_URL points at;
+ *   3. --confirm-production is also required, so a remote apply always takes
+ *      three deliberate flags.
+ */
+export function applyRefusal(target, args) {
+  if (target.local) return null;
+  if (!args.yesProduction) {
+    return (
+      'refusing to apply migrations to a non-local database without --yes-production.\n' +
+      '          Run with --dry-run first to see what would be applied.'
+    );
+  }
+  const expected = target.projectRef ?? target.host;
+  if (args.projectRef !== expected) {
+    return (
+      `refusing: DATABASE_URL points at ${target.projectRef === null ? `host ${target.host}` : `Supabase project ${target.projectRef}`}.\n` +
+      `          Re-run with --project-ref=${expected} to confirm that is the database you mean to change.`
+    );
+  }
+  if (!args.confirmProduction) {
+    return (
+      `refusing: ${expected} is the production database.\n` +
+      '          Applying to it also needs --confirm-production, and explicit approval.'
+    );
+  }
+  return null;
 }
 
 /**

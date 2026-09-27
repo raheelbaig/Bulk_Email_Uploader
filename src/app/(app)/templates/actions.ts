@@ -99,9 +99,15 @@ export async function updateTemplateAction(_prev: FormState, form: FormData): Pr
   });
 }
 
-export async function deleteTemplateAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  await deleteTemplate(workspaceId, String(form.get('templateId') ?? ''));
-  revalidatePath('/templates');
-  redirect('/templates');
+/**
+ * Returns a FormState so "a campaign still uses this template" reaches the
+ * person as a message; as a void action it threw into the error boundary.
+ */
+export async function deleteTemplateAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:deleteTemplate', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await deleteTemplate(workspaceId, text(form, 'templateId'));
+    revalidatePath('/templates');
+    redirect('/templates');
+  });
 }

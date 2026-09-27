@@ -8,7 +8,10 @@
  *
  *   pnpm db:migrate                    local database (localhost only)
  *   pnpm db:migrate --dry-run          report pending migrations; changes nothing
- *   pnpm db:migrate --yes-production   required for any non-local host
+ *   pnpm db:migrate --yes-production --project-ref=<ref> --confirm-production
+ *                                      all three required for any non-local
+ *                                      host; <ref> must match the project
+ *                                      DATABASE_URL names
  *
  * DATABASE_URL is read from the environment, then from .env.local. Only the
  * host, port and database name are ever printed.
@@ -19,6 +22,7 @@ import postgres from 'postgres';
 import {
   MIGRATION_LOCK_KEY,
   TRACKING_TABLE_SQL,
+  applyRefusal,
   describeTarget,
   fingerprint,
   loadEnvLocal,
@@ -33,7 +37,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.unknown.length > 0) {
     console.error(`[migrate] unknown argument(s): ${args.unknown.join(' ')}`);
-    console.error('          usage: db:migrate [--dry-run] [--yes-production]');
+    console.error('          usage: db:migrate [--dry-run] [--yes-production --project-ref=<ref> --confirm-production]');
     return 2;
   }
 
@@ -51,16 +55,20 @@ async function main() {
   }
   console.log(
     `[migrate] target: host=${target.host} port=${target.port} database=${target.database}` +
-      (target.local ? ' (local)' : ' (REMOTE)') +
+      (target.projectRef === null ? '' : ` supabase-project=${target.projectRef}`) +
+      (target.local ? ' (local)' : ' (REMOTE — production)') +
       (args.dryRun ? ' — dry run' : ''),
   );
 
-  if (!target.local && !args.dryRun && !args.yesProduction) {
-    console.error(
-      '[migrate] refusing to apply migrations to a non-local database without --yes-production.\n' +
-        '          Run with --dry-run first to see what would be applied.',
-    );
-    return 2;
+  // Every project in a region shares one pooler host, so --yes-production alone
+  // cannot say WHICH project is about to change. The operator must name it, it
+  // must match DATABASE_URL, and production needs its own confirmation.
+  if (!args.dryRun) {
+    const refusal = applyRefusal(target, args);
+    if (refusal !== null) {
+      console.error(`[migrate] ${refusal}`);
+      return 2;
+    }
   }
 
   const files = readdirSync(DIR).filter((f) => f.endsWith('.sql')).sort();

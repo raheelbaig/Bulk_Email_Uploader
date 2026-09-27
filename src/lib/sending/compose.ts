@@ -25,6 +25,12 @@
  * without one. Preflight blocks the campaign before launch; this is the second
  * lock on the same door, for the case where the key disappears mid-campaign.
  *
+ * ── The postal address is appended here too (migration 0014) ─────────────
+ *
+ * Such a campaign also gets the workspace's postal address in both footers.
+ * It is workspace configuration, not template content, so no template edit can
+ * remove it; and with none configured, composition fails the same way.
+ *
  * ── Header injection ─────────────────────────────────────────────────────
  *
  * The subject is already stripped of control characters by the renderer, and
@@ -51,12 +57,15 @@ export interface ComposeInput {
   requiresUnsubscribe: boolean;
   /** Null when no unsubscribe key is configured. */
   unsubscribeUrl: string | null;
+  /** The workspace's postal address; null when none is configured. */
+  postalAddress: string | null;
   tags: Readonly<Record<string, string>>;
 }
 
 export type ComposeFailure =
   | 'render_failed'
   | 'unsubscribe_unavailable'
+  | 'postal_address_missing'
   | 'invalid_recipient'
   | 'invalid_header';
 
@@ -92,7 +101,21 @@ export function personalizationFromJob(toEmail: string, mergeData: unknown): Per
   };
 }
 
-function wrapHtml(bodyHtml: string, preheader: string | null, unsubscribeUrl: string | null): string {
+interface Footer {
+  unsubscribeUrl: string | null;
+  postalAddress: string | null;
+}
+
+/** Address lines, trimmed, blanks dropped. Rendered as text in both parts. */
+function addressLines(postalAddress: string | null): string[] {
+  if (postalAddress === null) return [];
+  return postalAddress
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function wrapHtml(bodyHtml: string, preheader: string | null, footer: Footer): string {
   const parts = ['<!doctype html><html><head><meta charset="utf-8"></head><body>'];
   if (preheader !== null && preheader.length > 0) {
     // The conventional hidden preheader: inboxes show it beside the subject; the
@@ -102,21 +125,27 @@ function wrapHtml(bodyHtml: string, preheader: string | null, unsubscribeUrl: st
     );
   }
   parts.push(bodyHtml);
-  if (unsubscribeUrl !== null) {
-    parts.push(
-      '<p style="margin-top:32px;font-size:12px;color:#666">' +
+  const lines = addressLines(footer.postalAddress);
+  if (footer.unsubscribeUrl !== null || lines.length > 0) {
+    parts.push('<p style="margin-top:32px;font-size:12px;color:#666">');
+    if (lines.length > 0) parts.push(`${lines.map(escapeText).join('<br>')}<br><br>`);
+    if (footer.unsubscribeUrl !== null) {
+      parts.push(
         'You are receiving this email because you are on our mailing list. ' +
-        `<a href="${escapeAttribute(unsubscribeUrl)}">Unsubscribe</a>.` +
-        '</p>',
-    );
+          `<a href="${escapeAttribute(footer.unsubscribeUrl)}">Unsubscribe</a>.`,
+      );
+    }
+    parts.push('</p>');
   }
   parts.push('</body></html>');
   return parts.join('');
 }
 
-function wrapText(bodyText: string, unsubscribeUrl: string | null): string {
-  if (unsubscribeUrl === null) return bodyText;
-  return `${bodyText.trimEnd()}\n\n--\nUnsubscribe: ${unsubscribeUrl}\n`;
+function wrapText(bodyText: string, footer: Footer): string {
+  const lines = addressLines(footer.postalAddress);
+  if (footer.unsubscribeUrl === null && lines.length === 0) return bodyText;
+  const tail = [...lines, ...(footer.unsubscribeUrl === null ? [] : [`Unsubscribe: ${footer.unsubscribeUrl}`])];
+  return `${bodyText.trimEnd()}\n\n--\n${tail.join('\n')}\n`;
 }
 
 export function composeMessage(input: ComposeInput): ComposeResult {
@@ -149,7 +178,15 @@ export function composeMessage(input: ComposeInput): ComposeResult {
       };
     }
     unsubscribeUrl = input.unsubscribeUrl;
+    if (addressLines(input.postalAddress).length === 0) {
+      return {
+        ok: false,
+        reason: 'postal_address_missing',
+        detail: 'this campaign requires a postal address in its footer and none is configured',
+      };
+    }
   }
+  const footer: Footer = { unsubscribeUrl, postalAddress: input.postalAddress };
 
   const headers: Record<string, string> = {};
   if (unsubscribeUrl !== null) {
@@ -169,8 +206,8 @@ export function composeMessage(input: ComposeInput): ComposeResult {
       replyTo: input.sender.replyTo,
       to: input.toEmail,
       subject: rendered.subject,
-      html: wrapHtml(rendered.html, rendered.previewText, unsubscribeUrl),
-      text: wrapText(rendered.text, unsubscribeUrl),
+      html: wrapHtml(rendered.html, rendered.previewText, footer),
+      text: wrapText(rendered.text, footer),
       headers,
       tags: input.tags,
     },

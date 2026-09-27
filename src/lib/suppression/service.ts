@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { requireWorkspace } from '@/lib/auth/workspace';
 import { normalizeEmail, NORMALIZE_FAILURE_MESSAGE } from '@/lib/email/normalize';
-import { ValidationError, ForbiddenError, InternalError } from '@/lib/errors';
+import { ValidationError, ForbiddenError, InternalError, parseInput } from '@/lib/errors';
 import { writeAuditLog } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { buildPage, clampLimit, type Cursor, type Page, type PageDirection } from '@/lib/pagination';
@@ -168,7 +168,7 @@ export async function addSuppression(
   input: SuppressionInput,
 ): Promise<{ suppression: Suppression; created: boolean }> {
   const access = await requireWorkspace(workspaceId);
-  const parsed = suppressionInputSchema.parse(input);
+  const parsed = parseInput(suppressionInputSchema, input);
 
   const normalized = normalizeEmail(parsed.email);
   if (!normalized.ok) throw new ValidationError(NORMALIZE_FAILURE_MESSAGE[normalized.reason]);

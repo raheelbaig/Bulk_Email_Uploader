@@ -221,11 +221,11 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
               chooseFile(event.dataTransfer.files[0] ?? null);
             }}
           >
-            <FileSpreadsheet className="h-6 w-6 text-[--color-muted-foreground]" aria-hidden />
+            <FileSpreadsheet className="h-6 w-6 text-(--color-muted-foreground)" aria-hidden />
             <span className="text-sm font-medium">
               {file === null ? 'Drop a file here, or click to choose' : file.name}
             </span>
-            <span className="text-xs text-[--color-muted-foreground]">
+            <span className="text-xs text-(--color-muted-foreground)">
               {file === null
                 ? `CSV, TSV, XLSX or XLS · up to ${MAX_MB} MB`
                 : `${(file.size / 1024).toFixed(0)} KB`}
@@ -243,7 +243,7 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="target-list" className="text-sm font-medium">
               Add imported contacts to a list
-              <span className="ml-1 text-xs text-[--color-muted-foreground]">optional</span>
+              <span className="ml-1 text-xs text-(--color-muted-foreground)">optional</span>
             </label>
             <Select
               id="target-list"
@@ -259,7 +259,7 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
             </Select>
           </div>
 
-          <p className="flex items-start gap-2 text-xs text-[--color-muted-foreground]">
+          <p className="flex items-start gap-2 text-xs text-(--color-muted-foreground)">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>
               Your file is uploaded to private storage and deleted as soon as the import
@@ -282,7 +282,7 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
         <div className="flex flex-col gap-4 rounded-lg border p-5">
           <div>
             <div className="text-sm font-medium">Step 2 — check the columns</div>
-            <p className="mt-1 text-sm text-[--color-muted-foreground]">
+            <p className="mt-1 text-sm text-(--color-muted-foreground)">
               Nothing has been imported yet. Confirm which spreadsheet column holds which
               contact field, then start the import.
             </p>
@@ -302,7 +302,7 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
                 return (
                   <TR key={`${header}-${index}`}>
                     <TD className="font-medium">{header}</TD>
-                    <TD className="max-w-[16rem] truncate text-[--color-muted-foreground]">
+                    <TD className="max-w-[16rem] truncate text-(--color-muted-foreground)">
                       {sample
                         .map((row) => row[index] ?? '')
                         .filter((cell) => cell.length > 0)
@@ -366,7 +366,7 @@ export function ImportWizard({ lists }: { lists: ListOption[] }) {
       {step === 'started' && (
         <div className="flex flex-col gap-3 rounded-lg border p-5">
           <div className="text-sm font-medium">Step 3 — importing</div>
-          <p className="text-sm text-[--color-muted-foreground]">
+          <p className="text-sm text-(--color-muted-foreground)">
             Your file is being processed in the background. The results appear below as soon as
             it finishes — refresh to check.
           </p>

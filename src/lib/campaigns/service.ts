@@ -75,6 +75,8 @@ export interface CampaignView {
   template: TemplateRecord | null;
   snapshot: TemplateSnapshot | null;
   timeZone: string;
+  /** The footer address (migration 0014); null when not configured. */
+  postalAddress: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +153,7 @@ async function loadView(
   repository: CampaignRepository,
   campaign: CampaignRecord,
 ): Promise<CampaignView> {
-  const [list, senderIdentity, template, timeZone] = await Promise.all([
+  const [list, senderIdentity, template, timeZone, postalAddress] = await Promise.all([
     campaign.list_id === null ? Promise.resolve(null) : repository.getList(campaign.list_id),
     campaign.sender_identity_id === null
       ? Promise.resolve(null)
@@ -160,6 +162,7 @@ async function loadView(
       ? Promise.resolve(null)
       : templateRepository(workspaceId).then((repo) => repo.get(campaign.template_id ?? '')),
     repository.timeZone(),
+    repository.postalAddress(),
   ]);
 
   // The readiness authority, never the status columns. Called only when there is
@@ -185,6 +188,7 @@ async function loadView(
     template,
     snapshot: parseTemplateSnapshot(campaign.template_snapshot),
     timeZone,
+    postalAddress,
   };
 }
 
@@ -422,6 +426,7 @@ async function evaluate(view: CampaignView, intent: PreflightIntent): Promise<Pr
     // is enforced (preflight UNSUBSCRIBE_ENFORCED), so a campaign that requires it
     // cannot be scheduled on a deployment that cannot sign the links.
     unsubscribe: { mechanismAvailable: unsubscribeMechanismAvailable() },
+    footer: { postalAddress: view.postalAddress },
     sendingMode: sendingConfig().mode,
     sampleRender:
       sampleRender === null
@@ -455,12 +460,16 @@ async function evaluate(view: CampaignView, intent: PreflightIntent): Promise<Pr
  * again against the frozen snapshot and the sender's current state, and only a
  * campaign that passes is launched (`lib/sending/worker`). With the deployment's
  * sending mode `disabled` — the default — the campaign stays scheduled.
+ *
+ * Admin and above, like `resumeSending`: scheduling is the act that authorises
+ * delivery, since nothing but the clock stands between it and the worker.
+ * Stopping (unschedule, pause, cancel) stays open to every member.
  */
 export async function scheduleCampaign(
   workspaceId: string,
   campaignId: string,
 ): Promise<{ campaign: CampaignRecord; result: PreflightResult }> {
-  const access = await requireWorkspace(workspaceId);
+  const access = await requireWorkspace(workspaceId, { minimumRole: 'admin' });
 
   const { result, view } = await runCampaignPreflight(access.workspaceId, campaignId, {
     intent: 'schedule',
@@ -484,8 +493,14 @@ export async function scheduleCampaign(
   const repository = await campaignRepository(access.workspaceId);
   const snapshot = buildTemplateSnapshot(view.template);
 
+  // The approval (migration 0012): this campaign may launch only while the
+  // deployment is in the mode it is in now. A later configuration change does
+  // not carry it along — it is held, and a person schedules it again.
+  const approvedSendMode = sendingConfig().mode;
+
   const scheduled = await repository.transition(campaignId, ['validating'], 'scheduled', {
     templateSnapshot: snapshot,
+    approvedSendMode,
   });
   if (scheduled === null) {
     throw new ConflictError('This campaign changed while it was being scheduled.');
@@ -502,6 +517,7 @@ export async function scheduleCampaign(
       scheduledAt: scheduled.scheduled_at,
       templateId: snapshot.template_id,
       templateVersion: snapshot.version,
+      approvedSendMode,
       eligibleRecipients: view.audience.eligible,
       warnings: result.warnings.map((issue) => issue.code),
     },

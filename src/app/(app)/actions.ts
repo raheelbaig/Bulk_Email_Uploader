@@ -97,11 +97,18 @@ export async function updateContactAction(
   });
 }
 
-export async function deleteContactAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  await deleteContact(workspaceId, text(form, 'contactId'));
-  revalidatePath('/contacts');
-  redirect('/contacts');
+// The delete and remove actions return a FormState, like every other action, so
+// a refusal ("a campaign still uses this list") reaches the person as a message
+// instead of throwing into the error boundary. On success they redirect, which
+// `run` re-throws untouched.
+
+export async function deleteContactAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:deleteContact', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await deleteContact(workspaceId, text(form, 'contactId'));
+    revalidatePath('/contacts');
+    redirect('/contacts');
+  });
 }
 
 // ── Lists ───────────────────────────────────────────────────────────────────
@@ -126,11 +133,13 @@ export async function renameListAction(_prev: FormState, form: FormData): Promis
   });
 }
 
-export async function deleteListAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  await deleteContactList(workspaceId, text(form, 'listId'));
-  revalidatePath('/lists');
-  redirect('/lists');
+export async function deleteListAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:deleteList', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await deleteContactList(workspaceId, text(form, 'listId'));
+    revalidatePath('/lists');
+    redirect('/lists');
+  });
 }
 
 export async function addListMemberAction(_prev: FormState, form: FormData): Promise<FormState> {
@@ -147,12 +156,15 @@ export async function addListMemberAction(_prev: FormState, form: FormData): Pro
   });
 }
 
-export async function removeListMemberAction(form: FormData): Promise<void> {
-  const { workspaceId } = await currentWorkspace();
-  const listId = String(form.get('listId') ?? '');
-  await removeListMember(workspaceId, listId, String(form.get('contactId') ?? ''));
-  revalidatePath(`/lists/${listId}`);
-  revalidatePath('/lists');
+export async function removeListMemberAction(_prev: FormState, form: FormData): Promise<FormState> {
+  return run('action:removeListMember', async () => {
+    const { workspaceId } = await currentWorkspace();
+    const listId = text(form, 'listId');
+    await removeListMember(workspaceId, listId, text(form, 'contactId'));
+    revalidatePath(`/lists/${listId}`);
+    revalidatePath('/lists');
+    return { ok: true, message: 'Removed from the list.' };
+  });
 }
 
 // ── Suppression ─────────────────────────────────────────────────────────────

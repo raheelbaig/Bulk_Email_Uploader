@@ -30,6 +30,9 @@ const PG_UNIQUE_VIOLATION = '23505';
 const PG_FK_VIOLATION = '23503';
 const PG_CHECK_VIOLATION = '23514';
 
+/** A malformed id matches no row; checked here so it never reaches SQL as a 22P02. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function toRecord(row: unknown): TemplateRecord {
   const record = row as TemplateRecord;
   return { ...record, variables: record.variables ?? [] };
@@ -128,6 +131,7 @@ export async function templateRepository(workspaceId: string): Promise<TemplateR
     },
 
     async get(templateId) {
+      if (!UUID.test(templateId)) return null;
       const { data, error } = await supabase
         .from('templates')
         .select(COLUMNS)

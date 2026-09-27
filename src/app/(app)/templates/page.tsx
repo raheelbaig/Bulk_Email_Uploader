@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { FileText, Plus } from 'lucide-react';
-import { currentWorkspace } from '@/lib/auth/workspace';
+import { workspaceForPage } from '@/lib/auth/workspace';
 import { listTemplates } from '@/lib/templates/service';
 import { STANDARD_VARIABLES } from '@/lib/templates/variables';
 import { MAX_SUBJECT_CHARS, MAX_TEMPLATE_NAME_CHARS, MAX_PREVIEW_TEXT_CHARS } from '@/lib/templates/constants';
@@ -21,14 +21,14 @@ export const dynamic = 'force-dynamic';
  * lives on the detail page, inside a sandboxed frame.
  */
 export default async function TemplatesPage() {
-  const { workspaceId } = await currentWorkspace();
+  const { workspaceId } = await workspaceForPage();
   const page = await listTemplates(workspaceId, { limit: 50 });
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-        <p className="text-sm text-[--color-muted-foreground]">
+        <p className="text-sm text-(--color-muted-foreground)">
           Reusable message content. Personalization uses whitelisted fields only —{' '}
           {STANDARD_VARIABLES.map((name) => `{{${name}}}`).join(', ')}, and{' '}
           <code>{'{{custom.field}}'}</code> for imported columns.
@@ -73,17 +73,17 @@ export default async function TemplatesPage() {
                 rows={12}
                 placeholder={'<p>Hello {{first_name}},</p>\n<p>…</p>'}
               />
-              <p className="text-xs text-[--color-muted-foreground]">
+              <p className="text-xs text-(--color-muted-foreground)">
                 Scripts, embedded frames, event handlers and unsafe links are removed on save.
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="text" className="text-sm font-medium">
                 Plain-text version
-                <span className="ml-1 text-xs text-[--color-muted-foreground]">optional</span>
+                <span className="ml-1 text-xs text-(--color-muted-foreground)">optional</span>
               </label>
               <Textarea id="text" name="text" rows={5} />
-              <p className="text-xs text-[--color-muted-foreground]">
+              <p className="text-xs text-(--color-muted-foreground)">
                 Leave blank to generate it from the HTML. Every message needs one.
               </p>
             </div>
@@ -115,12 +115,12 @@ export default async function TemplatesPage() {
                     {template.name}
                   </Link>
                 </TD>
-                <TD className="max-w-xs truncate text-[--color-muted-foreground]">
+                <TD className="max-w-xs truncate text-(--color-muted-foreground)">
                   {template.subject}
                 </TD>
                 <TD>
                   {template.variables.length === 0 ? (
-                    <span className="text-xs text-[--color-muted-foreground]">none</span>
+                    <span className="text-xs text-(--color-muted-foreground)">none</span>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {template.variables.map((name) => (
@@ -129,7 +129,7 @@ export default async function TemplatesPage() {
                     </div>
                   )}
                 </TD>
-                <TD className="text-[--color-muted-foreground]">v{template.version}</TD>
+                <TD className="text-(--color-muted-foreground)">v{template.version}</TD>
               </TR>
             ))}
           </TBody>

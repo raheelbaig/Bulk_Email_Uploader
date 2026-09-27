@@ -53,6 +53,7 @@ export const workspaceSettings = pgTable('workspace_settings', {
   workspaceId: uuid('workspace_id').primaryKey(),
   displayTimezone: text('display_timezone').notNull().default('UTC'),
   notificationEmail: text('notification_email'),
+  postalAddress: text('postal_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }),
 });
@@ -395,6 +396,7 @@ export const campaigns = pgTable(
     pauseReason: text('pause_reason'),
     launchedBy: uuid('launched_by'),
     executionMode: text('execution_mode'),
+    approvedSendMode: text('approved_send_mode'),
     nTotal: integer('n_total').notNull().default(0),
     nSent: integer('n_sent').notNull().default(0),
     nDelivered: integer('n_delivered').notNull().default(0),

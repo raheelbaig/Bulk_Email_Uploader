@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { use, useActionState } from 'react';
 import { Mail } from 'lucide-react';
 import { signIn, type AuthFormState } from '../actions';
 import { Button } from '@/components/ui/button';
@@ -12,18 +12,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 const initialState: AuthFormState = { message: null };
 
-export default function LoginPage() {
+const NOTICES: Record<string, string> = {
+  'confirm-failed':
+    'That confirmation link could not sign you in. If you already confirmed your email, sign in below. If the link expired, sign up again with the same email address to get a new one.',
+};
+
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string | string[] }>;
+}) {
   const [state, action, pending] = useActionState(signIn, initialState);
+  const { notice } = use(searchParams);
+  const noticeText = typeof notice === 'string' ? NOTICES[notice] : undefined;
 
   return (
     <Card>
       <CardHeader>
-        <Mail className="h-5 w-5 text-[--color-muted-foreground]" aria-hidden />
+        <Mail className="h-5 w-5 text-(--color-muted-foreground)" aria-hidden />
         <CardTitle>Sign in</CardTitle>
         <CardDescription>Continue to your workspace.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-4">
+          {state.message === null && noticeText !== undefined && <Alert>{noticeText}</Alert>}
           {state.message !== null && <Alert tone="destructive">{state.message}</Alert>}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="email">Email</Label>
@@ -36,7 +48,7 @@ export default function LoginPage() {
           <Button type="submit" disabled={pending}>
             {pending ? 'Signing in…' : 'Sign in'}
           </Button>
-          <p className="text-center text-sm text-[--color-muted-foreground]">
+          <p className="text-center text-sm text-(--color-muted-foreground)">
             No account?{' '}
             <Link href="/signup" className="underline underline-offset-4">
               Create one

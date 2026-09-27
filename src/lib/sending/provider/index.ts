@@ -29,6 +29,7 @@ export function outboundProviderFor(executionMode: 'dry_run' | 'live'): Outbound
   const env = serverEnv();
   const gate = evaluateLiveGate({
     mode: env.EMAIL_SENDING_MODE,
+    appEnvironment: env.APP_ENVIRONMENT,
     hasProviderCredentials:
       env.AWS_REGION !== undefined &&
       env.AWS_ACCESS_KEY_ID !== undefined &&

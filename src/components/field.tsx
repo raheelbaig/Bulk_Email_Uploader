@@ -29,7 +29,7 @@ export function Field({
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium">
         {label}
-        {!required && <span className="ml-1 text-xs text-[--color-muted-foreground]">optional</span>}
+        {!required && <span className="ml-1 text-xs text-(--color-muted-foreground)">optional</span>}
       </label>
       <Input
         id={id}
@@ -40,7 +40,7 @@ export function Field({
         {...(placeholder ? { placeholder } : {})}
         {...(maxLength ? { maxLength } : {})}
       />
-      {hint !== undefined && <p className="text-xs text-[--color-muted-foreground]">{hint}</p>}
+      {hint !== undefined && <p className="text-xs text-(--color-muted-foreground)">{hint}</p>}
     </div>
   );
 }
