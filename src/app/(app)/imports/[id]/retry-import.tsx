@@ -20,7 +20,7 @@ export function RetryImport({ importId }: { importId: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {message !== null && <Alert tone={ok ? 'default' : 'destructive'}>{message}</Alert>}
+      {message !== null && <Alert tone={ok ? 'success' : 'destructive'}>{message}</Alert>}
       <div>
         <Button
           type="button"

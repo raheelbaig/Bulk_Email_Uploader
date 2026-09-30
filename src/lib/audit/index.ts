@@ -80,8 +80,12 @@ export const AUDIT_ACTIONS = [
   'send.uncertain_redispatched',
   'send.uncertain_left',
   'suppression.unsubscribed',
-  // reserved for later phases — named now, unused until then
+  // provider events (P6). Written by the events_record_* functions (0016),
+  // in the same transaction as the event: a suppression created or
+  // strengthened by a bounce or complaint, or an event applied without one.
   'suppression.auto',
+  'provider_event.recorded',
+  // reserved for later phases — named now, unused until then
   'policy.rate_changed',
   'policy.health_state_changed',
   'test_send.dispatched',

@@ -421,6 +421,32 @@ function readSampleRows(bytes: Uint8Array, format: string): string[][] {
   return parsed.slice(0, INSPECT_SAMPLE_ROWS * 2);
 }
 
+/**
+ * Closes an import the person replaced before confirming it — they went back
+ * from "Match columns" and chose a different file.
+ *
+ * Only an import that has not started (`uploaded` or `mapping`) can be closed,
+ * and only by moving it to `failed`, a transition the state machine already
+ * allows. No contact was written, so there is nothing to undo; the staged file
+ * is removed by the 24-hour sweep like any other. Without this, every "back,
+ * choose another file" left a row waiting forever.
+ */
+export async function abandonImport(workspaceId: string, importId: string): Promise<void> {
+  const access = await requireWorkspace(workspaceId);
+  await enforceRateLimit('import.inspect', access.userId, access.workspaceId);
+  parseInput(uuidSchema, importId);
+
+  const repository = importRepository(access.workspaceId);
+  const record = await repository.get(importId);
+  if (record === null) throw new ForbiddenError();
+  if (record.status !== 'uploaded' && record.status !== 'mapping') return;
+
+  await repository.transition(importId, ['uploaded', 'mapping'], 'failed', {
+    finished_at: new Date().toISOString(),
+    error_message: 'You chose a different file before confirming this one, so it wasn’t imported.',
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase B — confirm and process
 // ─────────────────────────────────────────────────────────────────────────────

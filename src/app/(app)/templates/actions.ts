@@ -61,7 +61,6 @@ function savedMessage(result: { sanitized: boolean; textGenerated: boolean }): s
   if (result.sanitized) {
     notes.push('Some markup was removed because it is not allowed in a template.');
   }
-  if (result.textGenerated) notes.push('The plain-text version was generated from the HTML.');
   return ['Template saved.', ...notes].join(' ');
 }
 
@@ -94,7 +93,7 @@ export async function updateTemplateAction(_prev: FormState, form: FormData): Pr
 
     return {
       ok: true,
-      message: `${savedMessage(result)} Now at version ${result.record.version}. Campaigns already scheduled keep the content they were frozen with.`,
+      message: `${savedMessage(result)} Campaigns that are already scheduled keep the email as it was when they were scheduled.`,
     };
   });
 }

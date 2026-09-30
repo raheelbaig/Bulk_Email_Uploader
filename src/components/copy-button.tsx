@@ -31,8 +31,9 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       onClick={copy}
       aria-label={`Copy ${label}`}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs',
-        'hover:bg-(--color-muted)',
+        'inline-flex h-7 shrink-0 items-center gap-1 rounded-md border bg-(--color-surface) px-2 text-xs font-medium transition-colors',
+        'hover:bg-(--color-muted) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-ring)',
+        copied && 'border-(--color-success-border) text-(--color-success-foreground)',
       )}
     >
       {copied ? (

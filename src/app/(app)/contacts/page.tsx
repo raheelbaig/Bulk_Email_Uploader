@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Search, UserPlus } from 'lucide-react';
+import { ChevronRight, Search, Upload, UserPlus, Users } from 'lucide-react';
 import { workspaceForPage } from '@/lib/auth/workspace';
 import {
   listContacts,
@@ -10,20 +10,24 @@ import {
 import { decodeCursor, encodeCursor, type PageDirection } from '@/lib/pagination';
 import { createContactAction } from '../actions';
 import { ActionForm } from '@/components/action-form';
+import { CreatePanel } from '@/components/create-panel';
 import { Field } from '@/components/field';
+import { PageHeader } from '@/components/page-header';
 import { Pager } from '@/components/pager';
-import { Table, THead, TBody, TR, TH, TD, EmptyState } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ContactStatusBadge } from '@/components/status-badge';
+import { Alert } from '@/components/ui/alert';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 
 export const dynamic = 'force-dynamic';
 
-const STATUS_TONE: Record<ContactStatus, 'positive' | 'danger' | 'warning'> = {
-  active: 'positive',
-  suppressed: 'danger',
-  invalid: 'warning',
+const STATUS_OPTION_LABEL: Record<ContactStatus, string> = {
+  active: 'Active',
+  suppressed: 'Unsubscribed or blocked',
+  invalid: 'Invalid address',
 };
 
 function asStatus(value: string | undefined): ContactStatus | undefined {
@@ -55,145 +59,205 @@ export default async function ContactsPage({
   });
 
   const searchTooShort = search !== undefined && search.trim().length < MIN_SEARCH_LENGTH;
+  const filtered = search !== undefined || status !== undefined;
+  const firstPage = one('cursor') === undefined;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>
-          <p className="text-sm text-(--color-muted-foreground)">
-            People you can email from this workspace.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Contacts"
+        description="The people you can reach with your campaigns."
+        actions={
+          <>
+            <Link href="#new" className={buttonVariants({ variant: 'outline' })}>
+              <UserPlus aria-hidden />
+              Add contact
+            </Link>
+            <Link href="/imports" className={buttonVariants()}>
+              <Upload aria-hidden />
+              Import contacts
+            </Link>
+          </>
+        }
+      />
 
-      <details className="rounded-lg border">
-        <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
-          <UserPlus className="h-4 w-4" aria-hidden />
-          Add a contact
-        </summary>
-        <div className="border-t px-4 py-4">
-          <ActionForm action={createContactAction} submitLabel="Add contact" pendingLabel="Adding…">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field name="email" label="Email" type="email" required maxLength={320} />
-              <Field name="company" label="Company" maxLength={200} />
-              <Field name="firstName" label="First name" maxLength={120} />
-              <Field name="lastName" label="Last name" maxLength={120} />
-              <Field name="website" label="Website" maxLength={300} />
-              <Field name="phone" label="Phone" maxLength={50} />
-            </div>
-          </ActionForm>
-        </div>
-      </details>
-
-      <form method="get" className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="q" className="text-xs font-medium text-(--color-muted-foreground)">
-            Search
-          </label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-(--color-muted-foreground)"
-              aria-hidden
-            />
-            <Input
-              id="q"
-              name="q"
-              defaultValue={search ?? ''}
-              placeholder="Email, name or company"
-              className="w-64 pl-8"
-            />
+      <CreatePanel
+        title="Add a contact"
+        description="Add one person by hand. To add many at once, import a spreadsheet instead."
+      >
+        <ActionForm action={createContactAction} submitLabel="Add contact" pendingLabel="Adding…" size="default">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field name="email" label="Email address" type="email" required maxLength={320} autoComplete="off" />
+            <Field name="company" label="Company" maxLength={200} />
+            <Field name="firstName" label="First name" maxLength={120} />
+            <Field name="lastName" label="Last name" maxLength={120} />
+            <Field name="website" label="Website" maxLength={300} />
+            <Field name="phone" label="Phone" maxLength={50} />
           </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="status" className="text-xs font-medium text-(--color-muted-foreground)">
-            Status
-          </label>
-          <Select id="status" name="status" defaultValue={status ?? ''}>
-            <option value="">All statuses</option>
-            {CONTACT_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button type="submit" variant="outline" size="sm">
-          Apply
-        </Button>
-        {(search !== undefined || status !== undefined) && (
-          <Link href="/contacts" className="px-2 py-1.5 text-sm underline underline-offset-4">
-            Clear
-          </Link>
-        )}
-      </form>
+        </ActionForm>
+      </CreatePanel>
 
-      {searchTooShort && (
-        <p className="text-sm text-(--color-muted-foreground)">
-          Type at least {MIN_SEARCH_LENGTH} characters to search. Showing all contacts.
-        </p>
-      )}
-
-      {page.items.length === 0 ? (
-        <EmptyState>
-          {search !== undefined || status !== undefined
-            ? 'No contacts match those filters.'
-            : 'No contacts yet. Add one above to get started.'}
-        </EmptyState>
+      {page.items.length === 0 && !filtered && firstPage ? (
+        <EmptyState
+          icon={Users}
+          title="No contacts yet"
+          description="Contacts are the people who receive your campaigns. The quickest way to start is to import a spreadsheet (CSV or Excel) you already have."
+          action={
+            <Link href="/imports" className={buttonVariants()}>
+              <Upload aria-hidden />
+              Import contacts
+            </Link>
+          }
+          secondaryAction={
+            <Link href="#new" className={buttonVariants({ variant: 'outline' })}>
+              <UserPlus aria-hidden />
+              Add one by hand
+            </Link>
+          }
+        />
       ) : (
         <>
-          <Table>
-            <THead>
-              <TR>
-                <TH>Email</TH>
-                <TH>Name</TH>
-                <TH>Company</TH>
-                <TH>Status</TH>
-                <TH>Created</TH>
-                <TH className="text-right">Actions</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {page.items.map((contact) => {
-                const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ');
-                return (
-                  <TR key={contact.id}>
-                    <TD className="font-medium">{contact.email_normalized}</TD>
-                    <TD>{name.length > 0 ? name : <Muted>—</Muted>}</TD>
-                    <TD>{contact.company ?? <Muted>—</Muted>}</TD>
-                    <TD>
-                      <Badge tone={STATUS_TONE[contact.status]}>{contact.status}</Badge>
-                    </TD>
-                    <TD className="whitespace-nowrap text-(--color-muted-foreground)">
-                      {new Date(contact.created_at).toLocaleDateString()}
-                    </TD>
-                    <TD className="text-right">
-                      <Link
-                        href={`/contacts/${contact.id}`}
-                        className="text-sm underline underline-offset-4"
-                      >
-                        Edit
-                      </Link>
-                    </TD>
-                  </TR>
-                );
-              })}
-            </TBody>
-          </Table>
+          <form
+            method="get"
+            role="search"
+            aria-label="Filter contacts"
+            className="flex flex-col gap-3 rounded-xl border bg-(--color-card) p-3 shadow-xs sm:flex-row sm:items-center"
+          >
+            <div className="relative min-w-0 flex-1">
+              <label htmlFor="q" className="sr-only">
+                Search contacts
+              </label>
+              <Search
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-(--color-muted-foreground)"
+                aria-hidden
+              />
+              <Input
+                id="q"
+                name="q"
+                type="search"
+                defaultValue={search ?? ''}
+                placeholder="Search by email, name or company"
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="status" className="sr-only">
+                Status
+              </label>
+              <Select id="status" name="status" defaultValue={status ?? ''} className="min-w-0 flex-1 sm:w-44 sm:flex-none">
+                <option value="">All statuses</option>
+                {CONTACT_STATUSES.map((value) => (
+                  <option key={value} value={value}>
+                    {STATUS_OPTION_LABEL[value]}
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit" variant="secondary">
+                Search
+              </Button>
+              {filtered && (
+                <Link href="/contacts" className={buttonVariants({ variant: 'ghost' })}>
+                  Clear
+                </Link>
+              )}
+            </div>
+          </form>
 
-          <Pager
-            basePath="/contacts"
-            params={{ q: search, status }}
-            nextCursor={page.nextCursor === null ? null : encodeCursor(page.nextCursor)}
-            prevCursor={page.prevCursor === null ? null : encodeCursor(page.prevCursor)}
-            showing={page.items.length}
-          />
+          {searchTooShort && (
+            <Alert tone="info">Type at least {MIN_SEARCH_LENGTH} characters to search. Showing all contacts.</Alert>
+          )}
+
+          {page.items.length === 0 ? (
+            <EmptyState
+              compact
+              icon={Search}
+              title="No matching contacts"
+              description="Try a different search, or clear the filters to see everyone."
+              action={
+                <Link href="/contacts" className={buttonVariants({ variant: 'outline' })}>
+                  Clear filters
+                </Link>
+              }
+            />
+          ) : (
+            <>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Contact</TH>
+                    <TH className="hidden md:table-cell">Company</TH>
+                    <TH>Status</TH>
+                    <TH className="hidden sm:table-cell">Added</TH>
+                    <TH className="w-10">
+                      <span className="sr-only">Open</span>
+                    </TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {page.items.map((contact) => {
+                    const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ');
+                    return (
+                      <TR key={contact.id} className="group relative">
+                        <TD className="max-w-[14rem] sm:max-w-none">
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            className="flex min-w-0 items-center gap-3 after:absolute after:inset-0 focus-visible:outline-none after:focus-visible:ring-2 after:focus-visible:ring-(--color-ring) after:focus-visible:ring-inset"
+                          >
+                            <span
+                              aria-hidden
+                              className="hidden size-8 shrink-0 items-center justify-center rounded-full bg-(--color-muted) text-xs font-semibold text-(--color-muted-foreground) sm:flex"
+                            >
+                              {(name.length > 0 ? name : contact.email_normalized).slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">
+                                {name.length > 0 ? name : contact.email_normalized}
+                              </span>
+                              {name.length > 0 && (
+                                <span className="block truncate text-sm text-(--color-muted-foreground)">
+                                  {contact.email_normalized}
+                                </span>
+                              )}
+                            </span>
+                          </Link>
+                        </TD>
+                        <TD className="hidden text-(--color-muted-foreground) md:table-cell">
+                          {contact.company ?? '—'}
+                        </TD>
+                        <TD>
+                          <ContactStatusBadge status={contact.status} />
+                        </TD>
+                        <TD className="hidden whitespace-nowrap text-(--color-muted-foreground) sm:table-cell">
+                          {new Date(contact.created_at).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </TD>
+                        <TD className="text-(--color-muted-foreground)">
+                          <ChevronRight
+                            className="size-4 transition-transform group-hover:translate-x-0.5"
+                            aria-hidden
+                          />
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+
+              <Pager
+                basePath="/contacts"
+                params={{ q: search, status }}
+                nextCursor={page.nextCursor === null ? null : encodeCursor(page.nextCursor)}
+                prevCursor={page.prevCursor === null ? null : encodeCursor(page.prevCursor)}
+                showing={page.items.length}
+                noun="contact"
+              />
+            </>
+          )}
         </>
       )}
     </div>
   );
-}
-
-function Muted({ children }: { children: React.ReactNode }) {
-  return <span className="text-(--color-muted-foreground)">{children}</span>;
 }

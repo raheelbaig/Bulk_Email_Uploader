@@ -24,6 +24,7 @@ describe('the live gate', () => {
     appEnvironment: 'production',
     hasProviderCredentials: true,
     hasConfigurationSet: true,
+    hasEventPipeline: true,
     hasUnsubscribeSecret: true,
     hasWorkerSecret: true,
     appUrl: 'https://mail.example.com',
@@ -39,6 +40,7 @@ describe('the live gate', () => {
     ['production_environment', { appEnvironment: 'development' as const }],
     ['provider_credentials', { hasProviderCredentials: false }],
     ['configuration_set', { hasConfigurationSet: false }],
+    ['event_pipeline', { hasEventPipeline: false }],
     ['unsubscribe_secret', { hasUnsubscribeSecret: false }],
     ['worker_secret', { hasWorkerSecret: false }],
     ['https_app_url', { appUrl: 'http://mail.example.com' }],
@@ -56,11 +58,12 @@ describe('the live gate', () => {
       appEnvironment: 'development',
       hasProviderCredentials: false,
       hasConfigurationSet: false,
+      hasEventPipeline: false,
       hasUnsubscribeSecret: false,
       hasWorkerSecret: false,
       appUrl: 'http://localhost:3000',
     });
-    expect(verdict.unmet).toHaveLength(7);
+    expect(verdict.unmet).toHaveLength(8);
   });
 });
 

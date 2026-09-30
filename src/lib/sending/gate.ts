@@ -33,6 +33,7 @@ export type LiveRequirement =
   | 'production_environment'
   | 'provider_credentials'
   | 'configuration_set'
+  | 'event_pipeline'
   | 'unsubscribe_secret'
   | 'worker_secret'
   | 'https_app_url';
@@ -42,6 +43,7 @@ export interface LiveGateInput {
   appEnvironment: AppEnvironment;
   hasProviderCredentials: boolean;
   hasConfigurationSet: boolean;
+  hasEventPipeline: boolean;
   hasUnsubscribeSecret: boolean;
   hasWorkerSecret: boolean;
   appUrl: string;
@@ -58,6 +60,7 @@ export function evaluateLiveGate(input: LiveGateInput): LiveGateVerdict {
   if (input.appEnvironment !== 'production') unmet.push('production_environment');
   if (!input.hasProviderCredentials) unmet.push('provider_credentials');
   if (!input.hasConfigurationSet) unmet.push('configuration_set');
+  if (!input.hasEventPipeline) unmet.push('event_pipeline');
   if (!input.hasUnsubscribeSecret) unmet.push('unsubscribe_secret');
   if (!input.hasWorkerSecret) unmet.push('worker_secret');
   if (!isHttpsUrl(input.appUrl)) unmet.push('https_app_url');
@@ -82,6 +85,7 @@ export const LIVE_REQUIREMENT_MESSAGE: Record<LiveRequirement, string> = {
   production_environment: 'APP_ENVIRONMENT is not production, so this deployment never delivers real email.',
   provider_credentials: 'Amazon SES credentials and region are not configured.',
   configuration_set: 'AWS_SES_CONFIGURATION_SET is not configured, so SES would emit no delivery events.',
+  event_pipeline: 'AWS_SNS_TOPIC_ARN is not configured, so bounces and complaints would not be received.',
   unsubscribe_secret: 'UNSUBSCRIBE_SECRET_V1 is not configured, so messages could not carry a working unsubscribe link.',
   worker_secret: 'WORKER_HMAC_SECRET is not configured, so the scheduler cannot authenticate to the worker.',
   https_app_url: 'NEXT_PUBLIC_APP_URL is not a public https address, so unsubscribe links would not work for recipients.',

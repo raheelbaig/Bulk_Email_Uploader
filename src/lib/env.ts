@@ -76,6 +76,19 @@ const serverSchema = z.object({
     .regex(/^[A-Za-z0-9_-]{1,64}$/, 'AWS_SES_CONFIGURATION_SET must be a configuration set name')
     .optional(),
 
+  // P6: the one SNS topic whose notifications the webhook accepts
+  // (`app/api/webhooks/ses`). Not a secret — authenticity comes from the SNS
+  // signature — but a message from any other topic is refused, and without it
+  // the webhook refuses everything. Also a live-gate requirement: live sending
+  // cannot open while bounces and complaints would go unheard.
+  AWS_SNS_TOPIC_ARN: z
+    .string()
+    .regex(
+      /^arn:aws:sns:[a-z]{2}(-gov)?-[a-z]+-\d:\d{12}:[A-Za-z0-9_-]{1,256}$/,
+      'AWS_SNS_TOPIC_ARN must be a standard SNS topic ARN',
+    )
+    .optional(),
+
   // Authenticates the scheduler's calls to the worker endpoint (HMAC over
   // timestamp + body). Without it the endpoint refuses every request.
   WORKER_HMAC_SECRET: z.string().min(32).optional(),

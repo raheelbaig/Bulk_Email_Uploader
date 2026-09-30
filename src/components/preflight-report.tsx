@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import type { PreflightIssue, PreflightResult, PreflightSeverity } from '@/lib/campaigns/preflight';
 
 /**
@@ -8,6 +9,7 @@ import type { PreflightIssue, PreflightResult, PreflightSeverity } from '@/lib/c
  * Blockers, warnings and notices are kept visually distinct on purpose. A list
  * that treats "DMARC is not enforcing" the same as "there is nobody to send to"
  * trains people to skim it, and the one that mattered is the one they skim past.
+ * Each group is labelled in words as well as colour.
  */
 
 const ICON: Record<PreflightSeverity, typeof Info> = {
@@ -17,45 +19,64 @@ const ICON: Record<PreflightSeverity, typeof Info> = {
 };
 
 const TONE: Record<PreflightSeverity, string> = {
-  blocker: 'text-(--color-destructive)',
-  warning: 'text-amber-600 dark:text-amber-400',
+  blocker: 'text-(--color-danger)',
+  warning: 'text-(--color-warning)',
   info: 'text-(--color-muted-foreground)',
+};
+
+const GROUP_LABEL: Record<PreflightSeverity, string> = {
+  blocker: 'Must fix before scheduling',
+  warning: 'Worth checking',
+  info: 'Good to know',
 };
 
 function IssueRow({ issue }: { issue: PreflightIssue }) {
   const Icon = ICON[issue.severity];
   return (
-    <li className="flex gap-2.5 px-4 py-2.5">
-      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${TONE[issue.severity]}`} aria-hidden />
+    <li className="flex gap-3 px-4 py-3">
+      <Icon className={cn('mt-0.5 size-4 shrink-0', TONE[issue.severity])} aria-hidden />
       <div className="min-w-0">
         <p className="text-sm font-medium">{issue.title}</p>
-        <p className="text-sm text-(--color-muted-foreground)">{issue.message}</p>
+        <p className="text-sm leading-relaxed text-(--color-muted-foreground)">{issue.message}</p>
         {issue.remediation !== undefined && (
-          <p className="mt-0.5 text-xs text-(--color-muted-foreground)">{issue.remediation}</p>
+          <p className="mt-1 text-sm font-medium text-(--color-foreground)/80">{issue.remediation}</p>
         )}
       </div>
     </li>
   );
 }
 
-export function PreflightReport({ result }: { result: PreflightResult }) {
+/**
+ * `ready` overrides the headline when the page knows more than the verdict —
+ * the builder's "check" run treats a missing send time as a notice, but a
+ * campaign without one cannot be scheduled, so it must not read "Ready".
+ */
+export function PreflightReport({ result, ready = result.ready }: { result: PreflightResult; ready?: boolean }) {
+  const groups: Array<[PreflightSeverity, PreflightIssue[]]> = [
+    ['blocker', result.blockers],
+    ['warning', result.warnings],
+    ['info', result.info],
+  ];
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        {result.ready ? (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {ready ? (
           <>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-            <span className="font-medium">Ready to schedule</span>
+            <CheckCircle2 className="size-5 text-(--color-success)" aria-hidden />
+            <span className="font-semibold">Ready to schedule</span>
           </>
         ) : (
           <>
-            <XCircle className="h-4 w-4 text-(--color-destructive)" aria-hidden />
-            <span className="font-medium">Blocked</span>
+            <XCircle className="size-5 text-(--color-danger)" aria-hidden />
+            <span className="font-semibold">Not ready yet</span>
           </>
         )}
-        <Badge tone={result.ready ? 'positive' : 'danger'}>
-          {result.blockers.length} {result.blockers.length === 1 ? 'blocker' : 'blockers'}
-        </Badge>
+        {result.blockers.length > 0 && (
+          <Badge tone="danger">
+            {result.blockers.length} to fix
+          </Badge>
+        )}
         {result.warnings.length > 0 && (
           <Badge tone="warning">
             {result.warnings.length} {result.warnings.length === 1 ? 'warning' : 'warnings'}
@@ -63,11 +84,25 @@ export function PreflightReport({ result }: { result: PreflightResult }) {
         )}
       </div>
 
-      <ul className="divide-y rounded-lg border">
-        {[...result.blockers, ...result.warnings, ...result.info].map((issue, index) => (
-          <IssueRow key={`${issue.code}-${index}`} issue={issue} />
+      {groups
+        .filter(([, issues]) => issues.length > 0)
+        .map(([severity, issues]) => (
+          <div key={severity} className="flex flex-col gap-2">
+            <h3 className="text-xs font-semibold tracking-wider text-(--color-muted-foreground) uppercase">
+              {GROUP_LABEL[severity]}
+            </h3>
+            <ul
+              className={cn(
+                'divide-y overflow-hidden rounded-lg border bg-(--color-surface)',
+                severity === 'blocker' && 'border-(--color-danger-border)',
+              )}
+            >
+              {issues.map((issue, index) => (
+                <IssueRow key={`${issue.code}-${index}`} issue={issue} />
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
     </div>
   );
 }

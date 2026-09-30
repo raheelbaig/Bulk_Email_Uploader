@@ -1,4 +1,4 @@
-import type { ImportStatus } from '@/lib/imports/constants';
+import type { ImportStatus, RowBucket } from '@/lib/imports/constants';
 
 /**
  * Display vocabulary for the import state machine.
@@ -9,25 +9,36 @@ import type { ImportStatus } from '@/lib/imports/constants';
  */
 
 export const STATUS_LABEL: Record<ImportStatus, string> = {
-  uploaded: 'Uploaded',
-  mapping: 'Awaiting confirmation',
+  // Both mean "the file is here, the columns haven't been confirmed": say what
+  // the person needs to do rather than naming an internal step.
+  uploaded: 'Needs columns matched',
+  mapping: 'Needs columns matched',
   processing: 'Importing',
   completed: 'Complete',
   failed: 'Failed',
 };
 
-export const STATUS_TONE: Record<ImportStatus, 'neutral' | 'positive' | 'warning' | 'danger'> = {
+export const STATUS_TONE: Record<ImportStatus, 'neutral' | 'positive' | 'warning' | 'danger' | 'info'> = {
   uploaded: 'neutral',
   mapping: 'warning',
-  processing: 'warning',
+  processing: 'info',
   completed: 'positive',
   failed: 'danger',
 };
 
+/** Row outcomes, in words a non-technical person reads without a glossary. */
+export const BUCKET_TITLE: Record<RowBucket, string> = {
+  valid: 'Added',
+  invalid: 'Invalid email address',
+  duplicate: 'Already in your contacts',
+  suppressed: 'Unsubscribed or blocked',
+  rejected: 'Couldn’t be read',
+};
+
 export const BUCKET_EXPLANATION = {
   valid: 'New contacts created',
-  invalid: 'Email address was not usable',
-  duplicate: 'Already present, in this file or in your contacts',
-  suppressed: 'On your suppression list — imported, but not mailable',
-  rejected: 'Row could not be used at all',
+  invalid: 'The email address wasn’t usable',
+  duplicate: 'Already in this file or in your contacts',
+  suppressed: 'Imported, but won’t receive emails',
+  rejected: 'The row couldn’t be used at all',
 } as const;

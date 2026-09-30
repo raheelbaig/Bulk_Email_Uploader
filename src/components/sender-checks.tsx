@@ -1,5 +1,7 @@
 import { Check, CircleDashed, TriangleAlert, X } from 'lucide-react';
 import type { VerificationStatus } from '@/lib/sender/status';
+import { CHECK_EXPLANATION } from '@/components/sender-copy';
+import { cn } from '@/lib/utils';
 
 /**
  * The four-check summary shown on every domain card and setup page.
@@ -17,21 +19,21 @@ const ICON: Record<VerificationStatus, typeof Check> = {
 };
 
 const TONE: Record<VerificationStatus, string> = {
-  verified: 'text-emerald-600 dark:text-emerald-400',
-  pending: 'text-amber-600 dark:text-amber-400',
-  failed: 'text-red-600 dark:text-red-400',
+  verified: 'text-(--color-success-foreground)',
+  pending: 'text-(--color-warning-foreground)',
+  failed: 'text-(--color-danger-foreground)',
   not_configured: 'text-(--color-muted-foreground)',
 };
 
 const STATUS_LABEL: Record<VerificationStatus, string> = {
-  verified: 'verified',
-  pending: 'pending',
-  failed: 'failed',
-  not_configured: 'not configured',
+  verified: 'Verified',
+  pending: 'Waiting',
+  failed: 'Not passing',
+  not_configured: 'Not set up',
 };
 
 export interface CheckRow {
-  label: string;
+  label: keyof typeof CHECK_EXPLANATION;
   status: VerificationStatus;
 }
 
@@ -39,16 +41,34 @@ export function SenderCheck({ label, status }: CheckRow) {
   const Icon = ICON[status];
   return (
     <div className="flex items-center gap-2 text-sm">
-      <Icon className={`h-3.5 w-3.5 ${TONE[status]}`} aria-hidden />
-      <span className="w-24 text-(--color-muted-foreground)">{label}</span>
-      <span className={TONE[status]}>{STATUS_LABEL[status]}</span>
+      <Icon className={cn('size-3.5 shrink-0', TONE[status])} aria-hidden />
+      <span className="w-24 shrink-0 text-(--color-muted-foreground)">{label}</span>
+      <span className={cn('font-medium', TONE[status])}>{STATUS_LABEL[status]}</span>
     </div>
   );
 }
 
-export function SenderChecks({ checks }: { checks: CheckRow[] }) {
+/**
+ * `detailed` adds a plain-language line under each check, for the domain's own
+ * page; the compact grid is for the domain cards.
+ */
+export function SenderChecks({ checks, detailed = false }: { checks: CheckRow[]; detailed?: boolean }) {
+  if (detailed) {
+    return (
+      <ul className="flex flex-col divide-y rounded-lg border bg-(--color-surface-subtle)">
+        {checks.map((check) => (
+          <li key={check.label} className="flex flex-col gap-0.5 px-3 py-2.5">
+            <SenderCheck {...check} />
+            <p className="pl-5.5 text-xs leading-relaxed text-(--color-muted-foreground)">
+              {CHECK_EXPLANATION[check.label]}
+            </p>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
-    <div className="flex flex-col gap-1">
+    <div className="grid gap-1.5 rounded-lg border bg-(--color-surface-subtle) px-3 py-2.5 sm:grid-cols-2">
       {checks.map((check) => (
         <SenderCheck key={check.label} {...check} />
       ))}

@@ -51,6 +51,7 @@ export function sendingConfig(): SendingConfig {
         env.AWS_ACCESS_KEY_ID !== undefined &&
         env.AWS_SECRET_ACCESS_KEY !== undefined,
       hasConfigurationSet: env.AWS_SES_CONFIGURATION_SET !== undefined,
+      hasEventPipeline: env.AWS_SNS_TOPIC_ARN !== undefined,
       hasUnsubscribeSecret: unsubscribeConfigured,
       hasWorkerSecret: env.WORKER_HMAC_SECRET !== undefined,
       appUrl: env.NEXT_PUBLIC_APP_URL,

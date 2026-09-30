@@ -438,8 +438,9 @@ describe('the queue and limiter are invisible to clients', () => {
     const res = await db.raw<{ table_name: string; reason: string }>(
       `select table_name, reason from app.rls_policy_exceptions order by table_name`,
     );
-    // rate_ledger (P5) is registered alongside, for the same reason as rate_limits.
-    expect(res.rows.map((r) => r.table_name)).toEqual(['import_jobs', 'rate_ledger', 'rate_limits']);
+    // rate_ledger (P5) is registered alongside, for the same reason as rate_limits,
+    // and provider_events (P6, 0016) because a writable one could forge bounces.
+    expect(res.rows.map((r) => r.table_name)).toEqual(['import_jobs', 'provider_events', 'rate_ledger', 'rate_limits']);
     for (const row of res.rows) expect(row.reason.length).toBeGreaterThan(30);
   });
 

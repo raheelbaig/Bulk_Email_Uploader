@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { use, useActionState } from 'react';
-import { Mail } from 'lucide-react';
 import { signIn, type AuthFormState } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,15 +26,14 @@ export default function LoginPage({
   const noticeText = typeof notice === 'string' ? NOTICES[notice] : undefined;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
-        <Mail className="h-5 w-5 text-(--color-muted-foreground)" aria-hidden />
         <CardTitle>Sign in</CardTitle>
-        <CardDescription>Continue to your workspace.</CardDescription>
+        <CardDescription>Welcome back. Sign in to continue to your workspace.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-4">
-          {state.message === null && noticeText !== undefined && <Alert>{noticeText}</Alert>}
+          {state.message === null && noticeText !== undefined && <Alert tone="info">{noticeText}</Alert>}
           {state.message !== null && <Alert tone="destructive">{state.message}</Alert>}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="email">Email</Label>
@@ -45,12 +43,12 @@ export default function LoginPage({
             <Label htmlFor="password">Password</Label>
             <Input id="password" name="password" type="password" autoComplete="current-password" required />
           </div>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending} className="w-full">
             {pending ? 'Signing in…' : 'Sign in'}
           </Button>
           <p className="text-center text-sm text-(--color-muted-foreground)">
             No account?{' '}
-            <Link href="/signup" className="underline underline-offset-4">
+            <Link href="/signup" className="font-medium text-(--color-primary) hover:underline">
               Create one
             </Link>
           </p>

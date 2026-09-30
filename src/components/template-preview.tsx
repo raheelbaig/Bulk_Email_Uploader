@@ -23,8 +23,7 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
   return (
     <div className="flex flex-col gap-3">
       {preview.issues.length > 0 && (
-        <Alert tone="destructive">
-          <p className="font-medium">This template cannot be used yet.</p>
+        <Alert tone="destructive" title="This email can’t be used yet">
           <ul className="mt-1 list-disc pl-4">
             {preview.issues.map((issue) => (
               <li key={issue.message}>{issue.message}</li>
@@ -33,12 +32,17 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
         </Alert>
       )}
 
-      <div className="rounded-lg border">
-        <dl className="grid gap-x-4 gap-y-1 border-b px-4 py-3 text-sm sm:grid-cols-[7rem_1fr]">
+      <div className="overflow-hidden rounded-lg border bg-(--color-surface) shadow-xs">
+        <div className="flex items-center gap-1.5 border-b bg-(--color-surface-subtle) px-3 py-2" aria-hidden>
+          <span className="size-2.5 rounded-full bg-(--color-border-strong)" />
+          <span className="size-2.5 rounded-full bg-(--color-border-strong)" />
+          <span className="size-2.5 rounded-full bg-(--color-border-strong)" />
+        </div>
+        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-b px-4 py-3 text-sm">
           <dt className="text-(--color-muted-foreground)">From</dt>
           <dd className="truncate">
             {preview.fromEmail === null ? (
-              <span className="text-(--color-muted-foreground)">No sender selected</span>
+              <span className="text-(--color-muted-foreground)">No sender chosen yet</span>
             ) : (
               <>
                 {preview.fromName} &lt;{preview.fromEmail}&gt;
@@ -54,18 +58,18 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
           )}
 
           <dt className="text-(--color-muted-foreground)">To</dt>
-          <dd className="flex items-center gap-2 truncate">
-            {preview.contactEmail}
-            {preview.usedSampleContact && <Badge>sample</Badge>}
+          <dd className="flex min-w-0 items-center gap-2">
+            <span className="truncate">{preview.contactEmail}</span>
+            {preview.usedSampleContact && <Badge tone="info">Sample contact</Badge>}
           </dd>
 
           <dt className="text-(--color-muted-foreground)">Subject</dt>
-          <dd className="font-medium">{preview.subject}</dd>
+          <dd className="font-semibold break-words">{preview.subject}</dd>
 
           {preview.previewText !== null && (
             <>
-              <dt className="text-(--color-muted-foreground)">Preview text</dt>
-              <dd className="text-(--color-muted-foreground)">{preview.previewText}</dd>
+              <dt className="text-(--color-muted-foreground)">Preview</dt>
+              <dd className="text-(--color-muted-foreground) break-words">{preview.previewText}</dd>
             </>
           )}
         </dl>
@@ -78,22 +82,22 @@ export function MessagePreview({ preview }: { preview: TemplatePreview }) {
           srcDoc={preview.document}
           title="Message preview"
           referrerPolicy="no-referrer"
-          className="h-[28rem] w-full rounded-b-lg bg-white"
+          className="block h-[28rem] w-full bg-white"
         />
       </div>
 
       {preview.missing.length > 0 && (
-        <p className="text-xs text-(--color-muted-foreground)">
-          Empty for this contact: {preview.missing.join(', ')}. Recipients missing these fields will
-          see a gap where the value would be.
-        </p>
+        <Alert tone="info">
+          This contact has no {preview.missing.map((name) => name.replace(/_/g, ' ')).join(', ')}. People
+          missing these details will see a blank where the value would be.
+        </Alert>
       )}
 
-      <details className="rounded-lg border">
-        <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
+      <details className="rounded-lg border bg-(--color-surface)">
+        <summary className="cursor-pointer rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-(--color-muted) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-ring)">
           Plain-text version
         </summary>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-t px-4 py-3 text-xs">
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-t px-4 py-3 text-xs leading-relaxed">
           {preview.text}
         </pre>
       </details>

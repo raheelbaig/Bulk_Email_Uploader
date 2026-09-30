@@ -2,21 +2,25 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const TONES = {
-  neutral: 'bg-(--color-muted) text-(--color-muted-foreground)',
-  positive: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-  warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  danger: 'bg-red-500/10 text-red-700 dark:text-red-400',
+  neutral: 'border-(--color-border) bg-(--color-muted) text-(--color-muted-foreground)',
+  positive: 'border-(--color-success-border) bg-(--color-success-subtle) text-(--color-success-foreground)',
+  warning: 'border-(--color-warning-border) bg-(--color-warning-subtle) text-(--color-warning-foreground)',
+  danger: 'border-(--color-danger-border) bg-(--color-danger-subtle) text-(--color-danger-foreground)',
+  info: 'border-(--color-info-border) bg-(--color-info-subtle) text-(--color-info-foreground)',
 } as const;
+
+export type BadgeTone = keyof typeof TONES;
 
 export function Badge({
   className,
   tone = 'neutral',
   ...props
-}: React.ComponentProps<'span'> & { tone?: keyof typeof TONES }) {
+}: React.ComponentProps<'span'> & { tone?: BadgeTone }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium',
+        '[&_svg]:size-3 [&_svg]:shrink-0',
         TONES[tone],
         className,
       )}

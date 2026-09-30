@@ -42,6 +42,8 @@ export const TENANT_COLUMN = {
   email_jobs: 'workspace_id',
   send_attempts: 'workspace_id',
   rate_ledger: 'workspace_id',
+  // Null until an event is matched to a job in that workspace (0016).
+  provider_events: 'workspace_id',
 } as const satisfies Record<string, string>;
 
 /**

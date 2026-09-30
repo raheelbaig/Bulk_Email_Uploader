@@ -492,5 +492,26 @@ export const rateLedger = pgTable(
   (table) => [primaryKey({ columns: [table.workspaceId, table.windowStart] })],
 );
 
+// P6 (0016). One row per SES event notification, keyed by SNS MessageId.
+// Service role only; codes, never an address or a raw payload.
+export const providerEvents = pgTable(
+  'provider_events',
+  {
+    snsMessageId: text('sns_message_id').primaryKey(),
+    eventType: text('event_type').notNull(),
+    providerMessageId: text('provider_message_id'),
+    workspaceId: uuid('workspace_id'),
+    jobId: uuid('job_id'),
+    snsTimestamp: timestamp('sns_timestamp', { withTimezone: true }).notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
+    outcome: text('outcome').notNull(),
+    suppressionAction: text('suppression_action'),
+    detail: jsonb('detail').notNull().default({}),
+  },
+  (table) => [index('ix_provider_events_received').on(table.receivedAt)],
+);
+
 export type EmailJob = typeof emailJobs.$inferSelect;
 export type SendAttempt = typeof sendAttempts.$inferSelect;

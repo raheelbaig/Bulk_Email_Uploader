@@ -1,14 +1,17 @@
 import Link from 'next/link';
-import { ArrowLeft, AtSign } from 'lucide-react';
+import { AtSign, CheckCircle2, Clock, Globe, Plus } from 'lucide-react';
 import { workspaceForPage } from '@/lib/auth/workspace';
 import { listSenderIdentities } from '@/lib/sender/identities';
 import { listSenderDomains } from '@/lib/sender/service';
-import { BLOCKER_MESSAGE, WARNING_MESSAGE } from '@/lib/sender/readiness';
 import { createIdentityAction, deleteIdentityAction, updateIdentityAction } from '../actions';
 import { ActionForm } from '@/components/action-form';
+import { CreatePanel } from '@/components/create-panel';
 import { Field } from '@/components/field';
-import { Badge } from '@/components/ui/badge';
-import { Table, THead, TBody, TR, TH, TD, EmptyState } from '@/components/ui/table';
+import { PageHeader } from '@/components/page-header';
+import { SENDER_BLOCKER_COPY, SENDER_WARNING_COPY, SendersTabs } from '@/components/sender-copy';
+import { StatusBadge } from '@/components/status-badge';
+import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,155 +33,187 @@ export default async function SenderIdentitiesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link
-          href="/senders"
-          className="mb-2 inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
-        >
-          <ArrowLeft className="h-3 w-3" aria-hidden />
-          Sender domains
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Sender addresses</h1>
-        <p className="text-sm text-(--color-muted-foreground)">
-          The addresses this workspace may send from. Each one must sit under a sending domain you
-          have added — that is enforced by the database, not only by this form.
-        </p>
-      </div>
-
-      <details className="rounded-lg border" open={identities.length === 0}>
-        <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
-          <AtSign className="h-4 w-4" aria-hidden />
-          Add a sender address
-        </summary>
-        <div className="border-t px-4 py-4">
-          {domains.length === 0 ? (
-            <p className="text-sm text-(--color-muted-foreground)">
-              Add a sending domain first — a sender address can only exist under one.
-            </p>
+      <PageHeader
+        title="Senders"
+        description="The name and email address people see when your campaign lands in their inbox. Each address must be on a domain you’ve added."
+        actions={
+          domains.length === 0 ? (
+            <Link href="/senders#new" className={buttonVariants()}>
+              <Plus aria-hidden />
+              Add domain first
+            </Link>
           ) : (
-            <ActionForm
-              action={createIdentityAction}
-              submitLabel="Add address"
-              pendingLabel="Adding…"
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  name="fromEmail"
-                  label="From address"
-                  type="email"
-                  required
-                  maxLength={254}
-                  placeholder={`hello@${domains[0]?.record.domain ?? 'example.com'}`}
-                  hint={`Must be on one of: ${domains.map((d) => d.record.domain).join(', ')}`}
-                />
-                <Field name="fromName" label="From name" required maxLength={120} />
-              </div>
+            <Link href="#new" className={buttonVariants()}>
+              <Plus aria-hidden />
+              Add sender address
+            </Link>
+          )
+        }
+      />
+
+      <SendersTabs active="addresses" />
+
+      {domains.length > 0 && (
+        <CreatePanel
+          title="Add a sender address"
+          description="You can prepare an address while its domain is still verifying — it becomes usable once verification passes."
+        >
+          <ActionForm action={createIdentityAction} submitLabel="Add sender address" pendingLabel="Adding…" size="default">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field
-                name="replyTo"
-                label="Reply-to"
-                type="email"
-                maxLength={254}
-                hint="Where replies go, if not the from address."
+                name="fromName"
+                label="Sender name"
+                required
+                maxLength={120}
+                placeholder="e.g. Acme Team"
+                hint="Shown as the sender in the inbox."
               />
-            </ActionForm>
-          )}
-        </div>
-      </details>
+              <Field
+                name="fromEmail"
+                label="Email address"
+                type="email"
+                required
+                maxLength={254}
+                placeholder={`hello@${domains[0]?.record.domain ?? 'example.com'}`}
+                hint={`Must end with ${domains.map((d) => `@${d.record.domain}`).join(' or ')}`}
+              />
+            </div>
+            <Field
+              name="replyTo"
+              label="Reply-to address"
+              type="email"
+              maxLength={254}
+              hint="Where replies go, if different from the address above."
+              className="sm:max-w-md"
+            />
+          </ActionForm>
+        </CreatePanel>
+      )}
 
       {identities.length === 0 ? (
-        <EmptyState>No sender addresses yet.</EmptyState>
+        domains.length === 0 ? (
+          <EmptyState
+            icon={Globe}
+            title="Add a domain first"
+            description="A sender address has to be on a domain you’ve verified, like hello@yourcompany.com. Start by adding your domain."
+            action={
+              <Link href="/senders#new" className={buttonVariants()}>
+                <Plus aria-hidden />
+                Add domain
+              </Link>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={AtSign}
+            title="No sender addresses yet"
+            description="Add the name and email address your campaigns will come from."
+            action={
+              <Link href="#new" className={buttonVariants()}>
+                <Plus aria-hidden />
+                Add sender address
+              </Link>
+            }
+          />
+        )
       ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH>Name</TH>
-              <TH>Email</TH>
-              <TH>Domain</TH>
-              <TH>Status</TH>
-              <TH>Reply-to</TH>
-              <TH className="text-right">Actions</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {identities.map(({ record, domain, readiness }) => (
-              <TR key={record.id}>
-                <TD className="font-medium">{record.from_name}</TD>
-                <TD>{record.from_email}</TD>
-                <TD className="text-(--color-muted-foreground)">
-                  {domain === null ? (
-                    '—'
-                  ) : (
-                    <Link
-                      href={`/senders/${domain.id}`}
-                      className="underline underline-offset-4"
-                    >
-                      {domain.domain}
-                    </Link>
-                  )}
-                </TD>
-                <TD>
-                  <Badge tone={readiness.ready ? 'positive' : 'warning'}>
-                    {readiness.ready ? 'Ready' : 'Not ready'}
-                  </Badge>
-                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-(--color-muted-foreground)">
-                    {readiness.blockers.map((blocker) => (
-                      <span key={blocker}>{BLOCKER_MESSAGE[blocker]}</span>
-                    ))}
-                    {readiness.ready &&
-                      readiness.warnings.map((warning) => (
-                        <span key={warning}>{WARNING_MESSAGE[warning]}</span>
-                      ))}
+        <ul className="flex flex-col gap-3">
+          {identities.map(({ record, domain, readiness }) => (
+            <li key={record.id} className="rounded-xl border bg-(--color-card) shadow-xs">
+              <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  <span
+                    aria-hidden
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-(--color-primary-subtle) text-sm font-semibold text-(--color-primary-subtle-foreground)"
+                  >
+                    {record.from_name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{record.from_name}</p>
+                    <p className="truncate text-sm text-(--color-muted-foreground)">{record.from_email}</p>
+                    <p className="mt-1 text-sm text-(--color-muted-foreground)">
+                      Replies go to {record.reply_to ?? 'the same address'}
+                      {domain !== null && (
+                        <>
+                          {' · '}
+                          <Link href={`/senders/${domain.id}`} className="underline-offset-4 hover:underline">
+                            {domain.domain}
+                          </Link>
+                        </>
+                      )}
+                    </p>
                   </div>
-                </TD>
-                <TD className="text-(--color-muted-foreground)">{record.reply_to ?? '—'}</TD>
-                <TD>
-                  <div className="flex flex-col items-end gap-2">
-                    <details className="w-full">
-                      <summary className="cursor-pointer text-right text-xs underline underline-offset-4">
-                        Edit
-                      </summary>
-                      <div className="mt-2">
-                        <ActionForm
-                          action={updateIdentityAction}
-                          submitLabel="Save"
-                          pendingLabel="Saving…"
-                          variant="outline"
-                        >
-                          <input type="hidden" name="identityId" value={record.id} />
-                          <Field
-                            name="fromName"
-                            idSuffix={record.id}
-                            label="From name"
-                            required
-                            maxLength={120}
-                            defaultValue={record.from_name}
-                          />
-                          <Field
-                            name="replyTo"
-                            idSuffix={record.id}
-                            label="Reply-to"
-                            type="email"
-                            maxLength={254}
-                            defaultValue={record.reply_to ?? ''}
-                          />
-                        </ActionForm>
-                      </div>
-                    </details>
+                </div>
+                <StatusBadge
+                  tone={readiness.ready ? 'positive' : 'warning'}
+                  label={readiness.ready ? 'Ready to send' : 'Not verified yet'}
+                  icon={readiness.ready ? CheckCircle2 : Clock}
+                  className="w-fit"
+                />
+              </div>
+
+              {(readiness.blockers.length > 0 || (readiness.ready && readiness.warnings.length > 0)) && (
+                <ul className="mx-5 mb-4 flex flex-col gap-1 rounded-lg border bg-(--color-surface-subtle) px-3 py-2 text-sm text-(--color-muted-foreground)">
+                  {[...new Set(readiness.blockers.map((blocker) => SENDER_BLOCKER_COPY[blocker]))].map((text) => (
+                    <li key={text}>{text}</li>
+                  ))}
+                  {readiness.ready &&
+                    readiness.warnings.map((warning) => <li key={warning}>{SENDER_WARNING_COPY[warning]}</li>)}
+                </ul>
+              )}
+
+              <div className="flex flex-col gap-3 rounded-b-xl border-t bg-(--color-surface-subtle) px-5 py-3 sm:flex-row sm:items-start sm:justify-between">
+                <details className="min-w-0 flex-1">
+                  <summary className="w-fit cursor-pointer rounded text-sm font-medium text-(--color-primary) hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-ring)">
+                    Edit name or reply-to
+                  </summary>
+                  <div className="mt-3 max-w-md">
                     <ActionForm
-                      action={deleteIdentityAction}
-                      submitLabel="Remove"
-                      pendingLabel="Removing…"
-                      variant="ghost"
-                      className="flex justify-end"
+                      action={updateIdentityAction}
+                      submitLabel="Save changes"
+                      successMessageMs={5000}
+                      pendingLabel="Saving…"
+                      variant="outline"
                     >
                       <input type="hidden" name="identityId" value={record.id} />
+                      <Field
+                        name="fromName"
+                        idSuffix={record.id}
+                        label="Sender name"
+                        required
+                        maxLength={120}
+                        defaultValue={record.from_name}
+                      />
+                      <Field
+                        name="replyTo"
+                        idSuffix={record.id}
+                        label="Reply-to address"
+                        type="email"
+                        maxLength={254}
+                        defaultValue={record.reply_to ?? ''}
+                      />
                     </ActionForm>
                   </div>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
+                </details>
+                <ActionForm
+                  action={deleteIdentityAction}
+                  submitLabel="Remove"
+                  pendingLabel="Removing…"
+                  variant="ghost"
+                  className="flex flex-col items-start gap-2 sm:items-end"
+                  confirm={{
+                    title: `Remove ${record.from_email}?`,
+                    description:
+                      'Campaigns can no longer be sent from this address. You can add it again later. An address that a campaign still uses can’t be removed.',
+                    confirmLabel: 'Remove sender address',
+                  }}
+                >
+                  <input type="hidden" name="identityId" value={record.id} />
+                </ActionForm>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -16,8 +16,10 @@ import { join, relative } from 'node:path';
  *
  *   1. Still no mail SDK, SMTP library or transport. SendEmail is one
  *      hand-signed request in one file (`lib/sending/provider/ses-send-client.ts`).
- *   2. Exactly two outbound network call sites: P3's configuration client (four
- *      reviewed operations, still none of them a send) and the send client.
+ *   2. Exactly three outbound network call sites: P3's configuration client
+ *      (four reviewed operations, still none of them a send), the send client,
+ *      and P6's SNS client (two GETs to Amazon SNS: a signing certificate and a
+ *      subscription confirmation — it can reach no other host).
  *   3. The send client is reachable only through the provider factory, and the
  *      factory only from the worker endpoint.
  *   4. EMAIL_SENDING_MODE defaults to `disabled`; `live` additionally requires
@@ -70,6 +72,8 @@ const PROVIDER_FACTORY = 'src/lib/sending/provider/index.ts';
 const WORKER_ROUTE = 'src/app/api/internal/worker/tick/route.ts';
 const UNSUBSCRIBE_ROUTE = 'src/app/u/[token]/route.ts';
 const AUTH_CONFIRM_ROUTE = 'src/app/auth/confirm/route.ts';
+const SES_WEBHOOK_ROUTE = 'src/app/api/webhooks/ses/route.ts';
+const SNS_CLIENT = 'src/lib/provider-events/sns-fetch.ts';
 
 describe('there is one send path, and nothing else can deliver', () => {
   it('no email SDK, SMTP library or external queue is installed', () => {
@@ -101,8 +105,8 @@ describe('there is one send path, and nothing else can deliver', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('exactly two modules make an outbound network call', () => {
-    const allowed = new Set([CONFIG_CLIENT, SEND_CLIENT]);
+  it('exactly three modules make an outbound network call', () => {
+    const allowed = new Set([CONFIG_CLIENT, SEND_CLIENT, SNS_CLIENT]);
     const offenders = FILES.filter(
       (f) => !allowed.has(rel(f)) && /\bfetch\s*\(|\bhttps?\.request\b|\bXMLHttpRequest\b/.test(read(f)),
     ).map(rel);
@@ -126,6 +130,19 @@ describe('there is one send path, and nothing else can deliver', () => {
       expect(code, file).toMatch(/REGION_PATTERN\.test\(config\.region\)/);
       expect(code, file).not.toMatch(/doFetch\(\s*(?:url|endpoint|target)\b/);
     }
+  });
+
+  it('the SNS client can only reach Amazon SNS, and refuses redirects', () => {
+    const code = codeOf(join(process.cwd(), SNS_CLIENT));
+    expect(code).toMatch(/^import 'server-only';/m);
+    expect(code).toContain(String.raw`const SNS_HOST = /^sns\.[a-z]{2}(?:-gov)?-[a-z]+-\d\.amazonaws\.com$/;`);
+    // Every fetch goes through the host check first, and never follows a redirect.
+    const fetches = [...code.matchAll(/\bfetch\(/g)].length;
+    expect(fetches).toBe(2);
+    expect([...code.matchAll(/redirect: 'error'/g)].length).toBe(fetches);
+    expect([...code.matchAll(/= snsUrl\(value\)/g)].length).toBe(fetches);
+    expect(code).not.toMatch(/method: '(POST|PUT|PATCH|DELETE)'/);
+    expect(code).not.toMatch(/outbound-emails|SendEmail|Publish|Subscribe\b/);
   });
 
   it("P3's configuration client still cannot send", () => {
@@ -206,6 +223,7 @@ describe('the send path is closed by default', () => {
     AWS_ACCESS_KEY_ID: 'AKIDEXAMPLEEXAMPLE00',
     AWS_SECRET_ACCESS_KEY: 'secret-secret-secret-secret-secret',
     AWS_SES_CONFIGURATION_SET: 'app-primary',
+    AWS_SNS_TOPIC_ARN: 'arn:aws:sns:eu-west-1:123456789012:email-uploader-ses-events',
     UNSUBSCRIBE_SECRET_V1: 'u'.repeat(40),
     WORKER_HMAC_SECRET: 'w'.repeat(40),
   };
@@ -265,7 +283,7 @@ describe('the send path is closed by default', () => {
     const { sendingConfig } = await withEnv({ ...fullLive, EMAIL_SENDING_MODE: 'live' });
     const serialized = JSON.stringify(sendingConfig());
     for (const value of Object.values(fullLive)) {
-      if (value === 'eu-west-1' || value === 'app-primary') continue;
+      if (value === 'eu-west-1' || value === 'app-primary' || value.startsWith('arn:aws:sns:')) continue;
       expect(serialized).not.toContain(value);
     }
   });
@@ -322,6 +340,8 @@ describe('entry points', () => {
         UNSUBSCRIBE_ROUTE,
         // The landing point for Supabase Auth email links (signup confirmation).
         AUTH_CONFIRM_ROUTE,
+        // P6: SES bounce/complaint events over SNS (signature-verified).
+        SES_WEBHOOK_ROUTE,
       ].sort(),
     );
   });
@@ -346,6 +366,31 @@ describe('entry points', () => {
     expect(code).toMatch(/if \(!auth\.ok\) \{[\s\S]*?status: 401/);
     // Nothing from the request body chooses what the tick does.
     expect(code).not.toMatch(/JSON\.parse\(body\)|request\.json\(\)/);
+  });
+
+  it('the SES webhook is POST-only and verifies the SNS signature before reading the event', () => {
+    const code = codeOf(join(process.cwd(), SES_WEBHOOK_ROUTE));
+    expect(code).toMatch(/export async function POST\(/);
+    expect(code).not.toMatch(/export async function (GET|PUT|PATCH|DELETE)\(/);
+    const capAt = code.indexOf('readCapped(request, SNS_MAX_BODY_BYTES)');
+    const verifyAt = code.indexOf('verifySnsEnvelope(');
+    const parseEventAt = code.indexOf('parseSesEvent(');
+    const applyAt = code.indexOf('applyProviderEvent(');
+    const confirmAt = code.indexOf('confirmSnsSubscription(');
+    expect(capAt).toBeGreaterThan(0);
+    expect(verifyAt).toBeGreaterThan(capAt);
+    expect(parseEventAt).toBeGreaterThan(verifyAt);
+    expect(applyAt).toBeGreaterThan(parseEventAt);
+    expect(confirmAt).toBeGreaterThan(verifyAt);
+    expect(code).toMatch(/if \(!verdict\.ok\) \{[\s\S]*?return bare\(/);
+    // No session, no workspace from the request, no sending engine.
+    expect(code).not.toMatch(/createSupabaseServerClient|requireWorkspace|serviceForWorkspace|searchParams|request\.json\(\)/);
+    expect(code).not.toMatch(/from '@\/lib\/sending\//);
+  });
+
+  it('only the provider-event store calls the event functions', () => {
+    const callers = FILES.filter((f) => /events_record_(bounce|complaint|ignored)/.test(codeOf(f))).map(rel);
+    expect(callers).toEqual(['src/lib/provider-events/store.ts']);
   });
 
   it('the unsubscribe GET changes nothing — only POST suppresses', () => {
@@ -426,6 +471,12 @@ describe('secrets and credentials', () => {
     );
     expect(readersOf('UNSUBSCRIBE_SECRET_V1')).toEqual(
       ['src/lib/sending/config.ts', PROVIDER_FACTORY, 'src/lib/unsubscribe/server.ts'].sort(),
+    );
+  });
+
+  it('the SNS topic is read only by the live gate and the webhook', () => {
+    expect(readersOf('AWS_SNS_TOPIC_ARN')).toEqual(
+      ['src/lib/sending/config.ts', PROVIDER_FACTORY, SES_WEBHOOK_ROUTE].sort(),
     );
   });
 

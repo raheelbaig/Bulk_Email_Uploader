@@ -7,6 +7,7 @@ import { isAppError, ValidationError } from '@/lib/errors';
 import { logger } from '@/lib/observability/logger';
 import { newRequestId, runWithContext } from '@/lib/observability/context';
 import {
+  abandonImport,
   createImport,
   inspectImport,
   confirmMapping,
@@ -84,6 +85,19 @@ export async function inspectImportAction(importId: string): Promise<ImportActio
     const { workspaceId } = await currentWorkspace();
     const inspection = await inspectImport(workspaceId, importId);
     return { ok: true, message: null, inspection };
+  });
+}
+
+/**
+ * Closes an unconfirmed import the person replaced with a different file, so
+ * going back and choosing again does not leave an import waiting forever.
+ */
+export async function abandonImportAction(importId: string): Promise<ImportActionState> {
+  return run('action:abandonImport', async () => {
+    const { workspaceId } = await currentWorkspace();
+    await abandonImport(workspaceId, importId);
+    revalidatePath('/imports');
+    return { ok: true, message: null };
   });
 }
 

@@ -263,7 +263,17 @@ async function build(
         .eq('id', identityId)
         .select('id')
         .maybeSingle();
-      if (error !== null) fail('deleteIdentity', error);
+      if (error !== null) {
+        // campaigns → sender_identities is ON DELETE RESTRICT (migration 0009):
+        // an address a campaign still names refuses to go. Say so, rather than
+        // surfacing it as an internal error.
+        if (error.code === PG_FK_VIOLATION) {
+          throw new ConflictError(
+            'A campaign still uses this sender address. Choose a different sender on that campaign, or delete the campaign, first.',
+          );
+        }
+        fail('deleteIdentity', error);
+      }
       return data !== null;
     },
 

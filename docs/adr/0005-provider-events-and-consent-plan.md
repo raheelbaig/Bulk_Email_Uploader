@@ -1,6 +1,6 @@
 # ADR-0005 — Implementation plan: SES bounce/complaint ingestion (P6) and consent tracking
 
-Status: **proposed**. Nothing here is built or enabled. It expands ADR-0004 §4–§5 into work items.
+Status: Part 1 **implemented, not applied or enabled** (2026-09-30, migration 0016 — see §1.8); Part 2 **proposed**. It expands ADR-0004 §4–§5 into work items.
 Date: 2026-09-26
 
 ---
@@ -48,7 +48,7 @@ Choosing SNS over EventBridge: SNS delivers straight to an HTTPS endpoint and si
 
 **App environment:** `AWS_SNS_TOPIC_ARN` (already reserved in `.env.example`).
 
-### 1.4 Database (migration 0015)
+### 1.4 Database (planned as 0015; built as migration 0016 — see §1.8)
 
 - `provider_events`:
   - columns: `sns_message_id text primary key`, `event_type text`, `provider_message_id text`, `workspace_id uuid null`, `job_id uuid null`, `received_at`, `processed_at`, `outcome text` (`applied`, `duplicate`, `unmatched`, `ignored`), `payload jsonb` (bounded, with the recipient address redacted to a hash);
@@ -93,6 +93,32 @@ Choosing SNS over EventBridge: SNS delivers straight to an HTTPS endpoint and si
 2. There is no staging environment. The webhook needs a public HTTPS URL (a Vercel deployment, or a tunnel) — `localhost` cannot receive SNS. Exercising it end to end without real recipients means SES **sandbox** credentials and **live** mode against the SES mailbox simulator (`bounce@simulator.amazonses.com`, `complaint@simulator.amazonses.com`, `success@simulator.amazonses.com`). That is an explicit decision for you: it is the first time live mode would be used anywhere.
 3. Production: SES account-level suppression list on first; then the topic and subscription; then deploy; then confirm events arrive (Send events from a small test to your own addresses) before any real campaign.
 
+### 1.8 Implementation notes (2026-09-30)
+
+Part 1 is built to the extent below, and **not** applied to any database or connected to AWS.
+
+**Built:** migration `0016_provider_events.sql` (this section's "0015" — that number went to the canonical job address), rollback `supabase/ops/rollback_0016.sql`, `lib/provider-events/{sns-verify,sns-fetch,parse,apply,store}.ts`, `POST /api/webhooks/ses`, and the live-gate requirement `event_pipeline` (`AWS_SNS_TOPIC_ARN`). Tests: `tests/provider-events-{sns,db,route}.test.ts`, plus `migration-safety`, `sending-gates` and `rls-coverage` updates.
+
+**Deviations from §1.4–§1.5, and why:**
+
+- **Scope.** Only Bounce and Complaint are acted on. Delivery, Send, Reject, DeliveryDelay, RenderingFailure and unknown types are recorded with `outcome = 'ignored'` (so a replay stays a no-op) and change nothing. `events_record_delivery/send/reject`, the `workspace_send_health` view and the worker auto-pause are **not built**.
+- **No payload column.** `provider_events.detail` holds codes only (bounce type/subtype, feedback type, recipient count, unmatched reason). Not even a hashed address: an unsalted hash of an email address is reversible by dictionary, and a matched event already points at its job.
+- **Recipient cross-check.** In addition to workspace + job + message id, the job's frozen address must be among the event's recipients (after `normalizeEmail`), and the campaign must have run `live`. An event that fails any check is stored `unmatched` with a reason and does nothing else.
+- **Extra job transitions.** 0010 only had `sent → delivered|bounced|complained`. Complaints usually arrive after delivery, so 0016 adds `delivered → bounced|complained` and `bounced → complained`. Jobs never move backwards, and counters move only with a job transition, so each job counts at most once per state.
+- **Strengthening a suppression.** If an address is already `manually_blocked` or `invalid` when a hard bounce or complaint arrives, the row is rewritten to the irreversible reason (source `ses_event`). Otherwise an owner could lift the block and mail a person who complained. A new trigger (`app.guard_suppression_update`) makes this the only permitted rewrite, for every role: the subject never changes, and a reason can never move toward reversible. An existing irreversible suppression (unsubscribe, complaint, hard bounce, provider-suppressed) is left exactly as it is.
+- **Audit is in the transaction.** The `events_record_*` functions write the `audit_logs` row themselves (`suppression.auto` when a suppression was created or strengthened, otherwise `provider_event.recorded`; actor `provider`; entity = the job; no address). A failure anywhere rolls back the event row too, so the provider's retry starts clean.
+- **Status codes.** 200 means recorded (applied, duplicate, unmatched or ignored). 400 means not an authentic, well-formed notification. 413 means too large. 500 means the database failed (retry). 503 means the signing certificate or confirmation URL was unreachable (retry).
+- **Stricter than §1.5.** The certificate host must be SNS in the *topic's* region, and the path is a single `*.pem` segment with no query. The certificate must be a currently valid X.509 RSA certificate. `x-amz-sns-message-type` must match the envelope. The SubscribeURL must be `ConfirmSubscription` for the configured topic and token.
+- **Network surface.** `lib/provider-events/sns-fetch.ts` is the third allowed outbound call site (pinned in `tests/sending-gates.test.ts`). It makes GET requests only, to `sns.<region>.amazonaws.com` only, with redirects refused, a 5 s timeout, a 16 KB certificate cap and a bounded 24 h cache.
+
+**Operator requirements this adds to §1.3:**
+
+- Set the topic attribute `SignatureVersion` to `2`. SNS defaults to 1, which the webhook refuses.
+- Keep raw message delivery **off** on the subscription.
+- Set `AWS_SNS_TOPIC_ARN` in the deployment. Until then the webhook answers 400 to everything and live sending stays closed.
+
+**Still open before live sending:** apply 0016 (with approval), then deploy. After that come the AWS resources in §1.3, the health view and auto-pause (§1.4, §1.5), and a retention/prune function for `provider_events` (no DELETE is granted to anyone).
+
 ---
 
 ## Part 2 — Consent and opt-in tracking
@@ -106,7 +132,7 @@ Choosing SNS over EventBridge: SNS delivers straight to an HTTPS endpoint and si
 - Audit logs record imports and membership changes.
 - **No consent fields anywhere.**
 
-### 2.2 Technical implementation (migration 0016)
+### 2.2 Technical implementation (next free migration number — 0017 or later; 0016 is P6)
 
 ```sql
 create type consent_status as enum

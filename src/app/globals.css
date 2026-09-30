@@ -2,57 +2,196 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens. Components use these through the `--color-*` theme names
+ * below, never raw palette colours, so a surface, a status and a focus ring look
+ * the same on every page.
+ *
+ * Status colours come in three parts: a tint for backgrounds, a border, and a
+ * foreground dark enough to pass WCAG AA as text on that tint.
+ */
 :root {
-  --background: oklch(0.99 0.002 250);
-  --foreground: oklch(0.21 0.012 260);
-  --muted: oklch(0.96 0.004 250);
-  --muted-foreground: oklch(0.52 0.014 258);
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.2 0.014 262);
+  --surface: oklch(1 0 0);
+  --surface-subtle: oklch(0.975 0.003 250);
+  --muted: oklch(0.955 0.005 255);
+  --muted-foreground: oklch(0.48 0.016 260);
   --card: oklch(1 0 0);
-  --border: oklch(0.91 0.006 255);
-  --input: oklch(0.91 0.006 255);
-  --primary: oklch(0.42 0.11 262);
+  --border: oklch(0.915 0.007 258);
+  --border-strong: oklch(0.86 0.01 258);
+  --input: oklch(0.88 0.009 258);
+
+  --primary: oklch(0.47 0.16 264);
+  --primary-hover: oklch(0.42 0.16 264);
   --primary-foreground: oklch(0.99 0.002 250);
-  --destructive: oklch(0.55 0.19 27);
-  --ring: oklch(0.42 0.11 262);
+  --primary-subtle: oklch(0.96 0.025 264);
+  --primary-subtle-foreground: oklch(0.4 0.15 264);
+
+  --success: oklch(0.55 0.13 155);
+  --success-subtle: oklch(0.965 0.03 155);
+  --success-border: oklch(0.87 0.07 155);
+  --success-foreground: oklch(0.4 0.1 155);
+
+  --warning: oklch(0.7 0.15 70);
+  --warning-subtle: oklch(0.975 0.035 85);
+  --warning-border: oklch(0.88 0.09 80);
+  --warning-foreground: oklch(0.45 0.1 60);
+
+  --danger: oklch(0.56 0.2 27);
+  --danger-subtle: oklch(0.97 0.018 25);
+  --danger-border: oklch(0.87 0.07 25);
+  --danger-foreground: oklch(0.47 0.18 27);
+
+  --info: oklch(0.56 0.13 245);
+  --info-subtle: oklch(0.965 0.02 245);
+  --info-border: oklch(0.88 0.05 245);
+  --info-foreground: oklch(0.43 0.12 250);
+
+  --destructive: var(--danger);
+  --ring: oklch(0.55 0.16 264);
+
+  --sidebar: oklch(0.975 0.003 255);
+  --sidebar-border: oklch(0.915 0.007 258);
+  --sidebar-accent: oklch(0.93 0.009 258);
+
   --radius: 0.5rem;
+  --shadow-xs: 0 1px 2px 0 oklch(0.2 0.02 262 / 0.05);
+  --shadow-sm: 0 1px 3px 0 oklch(0.2 0.02 262 / 0.07), 0 1px 2px -1px oklch(0.2 0.02 262 / 0.05);
+  --shadow-lg: 0 12px 32px -8px oklch(0.2 0.02 262 / 0.2), 0 4px 8px -4px oklch(0.2 0.02 262 / 0.08);
 }
 
 .dark {
-  --background: oklch(0.17 0.011 262);
-  --foreground: oklch(0.93 0.006 255);
+  --background: oklch(0.16 0.01 262);
+  --foreground: oklch(0.94 0.006 255);
+  --surface: oklch(0.2 0.012 262);
+  --surface-subtle: oklch(0.18 0.011 262);
   --muted: oklch(0.24 0.012 262);
-  --muted-foreground: oklch(0.68 0.012 258);
-  --card: oklch(0.21 0.012 262);
-  --border: oklch(0.29 0.014 262);
-  --input: oklch(0.29 0.014 262);
-  --primary: oklch(0.72 0.11 258);
-  --primary-foreground: oklch(0.17 0.011 262);
-  --destructive: oklch(0.65 0.17 27);
-  --ring: oklch(0.72 0.11 258);
+  --muted-foreground: oklch(0.7 0.012 258);
+  --card: oklch(0.2 0.012 262);
+  --border: oklch(0.28 0.014 262);
+  --border-strong: oklch(0.34 0.016 262);
+  --input: oklch(0.32 0.014 262);
+
+  --primary: oklch(0.7 0.13 264);
+  --primary-hover: oklch(0.75 0.12 264);
+  --primary-foreground: oklch(0.16 0.01 262);
+  --primary-subtle: oklch(0.27 0.05 264);
+  --primary-subtle-foreground: oklch(0.82 0.08 264);
+
+  --success: oklch(0.7 0.13 155);
+  --success-subtle: oklch(0.25 0.04 155);
+  --success-border: oklch(0.38 0.07 155);
+  --success-foreground: oklch(0.82 0.1 155);
+
+  --warning: oklch(0.78 0.14 75);
+  --warning-subtle: oklch(0.26 0.04 75);
+  --warning-border: oklch(0.4 0.07 75);
+  --warning-foreground: oklch(0.86 0.11 80);
+
+  --danger: oklch(0.66 0.17 27);
+  --danger-subtle: oklch(0.26 0.05 25);
+  --danger-border: oklch(0.4 0.09 25);
+  --danger-foreground: oklch(0.82 0.1 25);
+
+  --info: oklch(0.7 0.12 245);
+  --info-subtle: oklch(0.25 0.04 245);
+  --info-border: oklch(0.38 0.07 245);
+  --info-foreground: oklch(0.83 0.08 245);
+
+  --ring: oklch(0.7 0.13 264);
+
+  --sidebar: oklch(0.18 0.011 262);
+  --sidebar-border: oklch(0.26 0.013 262);
+  --sidebar-accent: oklch(0.25 0.014 262);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-card: var(--card);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-subtle-foreground: var(--primary-subtle-foreground);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-border: var(--success-border);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-border: var(--warning-border);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-danger-border: var(--danger-border);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-border: var(--info-border);
+  --color-info-foreground: var(--info-foreground);
   --color-destructive: var(--destructive);
   --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-lg: var(--shadow-lg);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 @layer base {
   * { border-color: var(--color-border); }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01";
+    line-height: 1.5;
+  }
+  ::selection { background-color: var(--color-primary-subtle); }
+  :focus-visible { outline-color: var(--color-ring); }
+
+  /* The mobile navigation drawer is a native <dialog>. */
+  dialog.nav-drawer::backdrop,
+  dialog.confirm-dialog::backdrop {
+    background: oklch(0.15 0.01 262 / 0.45);
+  }
+  /* Confirmation dialogs (ActionForm `confirm`). */
+  dialog.confirm-dialog[open] {
+    animation: confirm-in 140ms ease-out;
+  }
+  @keyframes confirm-in {
+    from { transform: translateY(6px) scale(0.98); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+  dialog.nav-drawer[open] {
+    animation: drawer-in 160ms ease-out;
+  }
+  @keyframes drawer-in {
+    from { transform: translateX(-12px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useActionState } from 'react';
-import { Mail } from 'lucide-react';
 import { signUp, type AuthFormState } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,19 +15,21 @@ export default function SignupPage() {
   const [state, action, pending] = useActionState(signUp, initialState);
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
-        <Mail className="h-5 w-5 text-(--color-muted-foreground)" aria-hidden />
         <CardTitle>Create your account</CardTitle>
-        <CardDescription>A workspace is set up for you automatically.</CardDescription>
+        <CardDescription>Your workspace is set up for you automatically.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-4">
           {state.message !== null && (
-            <Alert tone={state.ok === true ? 'default' : 'destructive'}>{state.message}</Alert>
+            <Alert tone={state.ok === true ? 'success' : 'destructive'}>{state.message}</Alert>
           )}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="workspace_name">Workspace name</Label>
+            <Label htmlFor="workspace_name">
+              Workspace name
+              <span className="ml-1.5 text-xs font-normal text-(--color-muted-foreground)">Optional</span>
+            </Label>
             <Input id="workspace_name" name="workspace_name" placeholder="Acme" maxLength={120} />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -45,14 +46,14 @@ export default function SignupPage() {
               minLength={8}
               required
             />
-            <p className="text-xs text-(--color-muted-foreground)">At least 8 characters.</p>
+            <p className="text-sm text-(--color-muted-foreground)">At least 8 characters.</p>
           </div>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending} className="w-full">
             {pending ? 'Creating account…' : 'Create account'}
           </Button>
           <p className="text-center text-sm text-(--color-muted-foreground)">
             Already have an account?{' '}
-            <Link href="/login" className="underline underline-offset-4">
+            <Link href="/login" className="font-medium text-(--color-primary) hover:underline">
               Sign in
             </Link>
           </p>

@@ -56,6 +56,7 @@ describe('live gate requires APP_ENVIRONMENT=production', () => {
     appEnvironment: 'production' as const,
     hasProviderCredentials: true,
     hasConfigurationSet: true,
+    hasEventPipeline: true,
     hasUnsubscribeSecret: true,
     hasWorkerSecret: true,
     appUrl: 'https://mail.example.com',

@@ -24,6 +24,8 @@ describe('migrations', () => {
       'import_rejections',
       'imports',
       'list_members',
+      // P6 — SES bounce/complaint ledger, keyed by SNS MessageId (0016).
+      'provider_events',
       // P5 — the per-minute send budget (0010).
       'rate_ledger',
       'rate_limits',

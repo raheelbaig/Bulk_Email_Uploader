@@ -190,8 +190,8 @@ export async function addSuppressionAction(_prev: FormState, form: FormData): Pr
     return {
       ok: true,
       message: result.created
-        ? 'Address suppressed. It can no longer be emailed from this workspace.'
-        : 'That address was already suppressed.',
+        ? 'Done. This address won’t receive any campaign from this workspace.'
+        : 'That address was already unsubscribed or blocked.',
     };
   });
 }
@@ -205,6 +205,6 @@ export async function removeSuppressionAction(
     await removeSuppression(workspaceId, text(form, 'suppressionId'));
     revalidatePath('/suppressions');
     revalidatePath('/contacts');
-    return { ok: true, message: 'Suppression removed.' };
+    return { ok: true, message: 'Address unblocked.' };
   });
 }

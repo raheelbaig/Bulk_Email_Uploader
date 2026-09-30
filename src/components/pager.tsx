@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -15,12 +16,16 @@ export function Pager({
   nextCursor,
   prevCursor,
   showing,
+  noun = 'row',
+  plural = `${noun}s`,
 }: {
   basePath: string;
   params: Record<string, string | undefined>;
   nextCursor: string | null;
   prevCursor: string | null;
   showing: number;
+  noun?: string;
+  plural?: string;
 }) {
   const href = (cursor: string, direction: 'forward' | 'backward') => {
     const search = new URLSearchParams();
@@ -32,34 +37,41 @@ export function Pager({
     return `${basePath}?${search.toString()}`;
   };
 
-  const linkClass = 'inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm';
-  const disabledClass = 'pointer-events-none opacity-40';
+  if (prevCursor === null && nextCursor === null) {
+    return (
+      <p className="text-sm text-(--color-muted-foreground)">
+        {showing.toLocaleString()} {showing === 1 ? noun : plural}
+      </p>
+    );
+  }
+
+  const linkClass = cn(buttonVariants({ variant: 'outline', size: 'sm' }));
 
   return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="text-xs text-(--color-muted-foreground)">
-        Showing {showing} {showing === 1 ? 'row' : 'rows'}
+    <nav aria-label="Pagination" className="flex items-center justify-between gap-4">
+      <p className="text-sm text-(--color-muted-foreground)">
+        Showing {showing.toLocaleString()} {showing === 1 ? noun : plural}
       </p>
       <div className="flex items-center gap-2">
         {prevCursor === null ? (
-          <span className={cn(linkClass, disabledClass)} aria-disabled="true">
-            <ChevronLeft className="h-3.5 w-3.5" aria-hidden /> Previous
+          <span className={linkClass} aria-disabled="true">
+            <ChevronLeft aria-hidden /> Previous
           </span>
         ) : (
           <Link href={href(prevCursor, 'backward')} className={linkClass}>
-            <ChevronLeft className="h-3.5 w-3.5" aria-hidden /> Previous
+            <ChevronLeft aria-hidden /> Previous
           </Link>
         )}
         {nextCursor === null ? (
-          <span className={cn(linkClass, disabledClass)} aria-disabled="true">
-            Next <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+          <span className={linkClass} aria-disabled="true">
+            Next <ChevronRight aria-hidden />
           </span>
         ) : (
           <Link href={href(nextCursor, 'forward')} className={linkClass}>
-            Next <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            Next <ChevronRight aria-hidden />
           </Link>
         )}
       </div>
-    </div>
+    </nav>
   );
 }

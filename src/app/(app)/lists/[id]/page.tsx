@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { Send, Upload, Users } from 'lucide-react';
 import { workspaceForPage } from '@/lib/auth/workspace';
 import { getContactList } from '@/lib/lists/service';
 import { listContacts } from '@/lib/contacts/service';
@@ -8,9 +8,13 @@ import { isAppError } from '@/lib/errors';
 import { renameListAction, deleteListAction, removeListMemberAction } from '../../actions';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
+import { PageHeader } from '@/components/page-header';
+import { SectionCard } from '@/components/section-card';
+import { ContactStatusBadge } from '@/components/status-badge';
 import { Badge } from '@/components/ui/badge';
-import { Table, THead, TBody, TR, TH, TD, EmptyState } from '@/components/ui/table';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,30 +36,50 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link
-          href="/lists"
-          className="inline-flex items-center gap-1 text-sm text-(--color-muted-foreground) underline underline-offset-4"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-          Lists
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{list.name}</h1>
-        <p className="text-sm text-(--color-muted-foreground)">
-          {list.contact_count} {list.contact_count === 1 ? 'contact' : 'contacts'}
-        </p>
-      </div>
+      <PageHeader
+        back={{ href: '/lists', label: 'Lists' }}
+        title={list.name}
+        meta={
+          <Badge tone="neutral">
+            <Users aria-hidden />
+            {list.contact_count.toLocaleString()} {list.contact_count === 1 ? 'contact' : 'contacts'}
+          </Badge>
+        }
+        description="The contacts on this list. Choose this list as the audience when you create a campaign."
+        actions={
+          <Link href="/campaigns#new" className={buttonVariants()}>
+            <Send aria-hidden />
+            Send a campaign
+          </Link>
+        }
+      />
 
       {members.items.length === 0 ? (
-        <EmptyState>No contacts on this list yet. Add one from a contact page.</EmptyState>
+        <EmptyState
+          icon={Users}
+          title="This list is empty"
+          description="Add contacts by importing a file into this list, or open any contact and add them to it."
+          action={
+            <Link href="/imports" className={buttonVariants()}>
+              <Upload aria-hidden />
+              Import contacts
+            </Link>
+          }
+          secondaryAction={
+            <Link href="/contacts" className={buttonVariants({ variant: 'outline' })}>
+              Browse contacts
+            </Link>
+          }
+        />
       ) : (
         <Table>
           <THead>
             <TR>
-              <TH>Email</TH>
-              <TH>Name</TH>
+              <TH>Contact</TH>
               <TH>Status</TH>
-              <TH className="text-right">Actions</TH>
+              <TH className="text-right">
+                <span className="sr-only">Actions</span>
+              </TH>
             </TR>
           </THead>
           <TBody>
@@ -63,16 +87,23 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
               const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ');
               return (
                 <TR key={contact.id}>
-                  <TD className="font-medium">
-                    <Link href={`/contacts/${contact.id}`} className="underline underline-offset-4">
-                      {contact.email_normalized}
+                  <TD className="max-w-[16rem] sm:max-w-none">
+                    <Link
+                      href={`/contacts/${contact.id}`}
+                      className="block min-w-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-ring)"
+                    >
+                      <span className="block truncate font-medium hover:underline">
+                        {name.length > 0 ? name : contact.email_normalized}
+                      </span>
+                      {name.length > 0 && (
+                        <span className="block truncate text-sm text-(--color-muted-foreground)">
+                          {contact.email_normalized}
+                        </span>
+                      )}
                     </Link>
                   </TD>
-                  <TD>{name.length > 0 ? name : '—'}</TD>
                   <TD>
-                    <Badge tone={contact.status === 'active' ? 'positive' : 'danger'}>
-                      {contact.status}
-                    </Badge>
+                    <ContactStatusBadge status={contact.status} />
                   </TD>
                   <TD className="text-right">
                     <ActionForm
@@ -81,6 +112,12 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
                       pendingLabel="Removing…"
                       variant="ghost"
                       className="flex flex-col items-end gap-1"
+                      actionsClassName="justify-end"
+                      confirm={{
+                        title: 'Remove from this list?',
+                        description: `${contact.email_normalized} will be taken off “${list.name}” and won’t receive campaigns sent to this list. The contact itself is kept, and you can add them back at any time.`,
+                        confirmLabel: 'Remove from list',
+                      }}
                     >
                       <input type="hidden" name="listId" value={list.id} />
                       <input type="hidden" name="contactId" value={contact.id} />
@@ -94,39 +131,38 @@ export default async function ListDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {members.hasMore && (
-        <p className="text-xs text-(--color-muted-foreground)">Showing the first 100 members.</p>
+        <p className="text-sm text-(--color-muted-foreground)">Showing the first 100 members.</p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Rename list</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ActionForm action={renameListAction} submitLabel="Rename" pendingLabel="Renaming…">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SectionCard title="Rename list" description="Only you and your team see this name — recipients never do.">
+          <ActionForm action={renameListAction} submitLabel="Save name" pendingLabel="Saving…" variant="outline" successMessageMs={5000}>
             <input type="hidden" name="listId" value={list.id} />
-            <Field name="name" label="Name" required defaultValue={list.name} maxLength={120} />
+            <Field name="name" label="List name" required defaultValue={list.name} maxLength={120} />
           </ActionForm>
-        </CardContent>
-      </Card>
+        </SectionCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Delete list</CardTitle>
-          <CardDescription>
-            Removes the list and its membership records. The contacts themselves are kept.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        <SectionCard
+          title="Delete list"
+          description="Removes the list itself. The contacts on it are kept and stay in your workspace."
+          className="border-(--color-danger-border)"
+        >
           <ActionForm
             action={deleteListAction}
             submitLabel="Delete list"
             pendingLabel="Deleting…"
             variant="destructive"
+            confirm={{
+              title: `Delete “${list.name}”?`,
+              description:
+                'The list is deleted. The contacts on it stay in your workspace. A list that a campaign uses can’t be deleted — change or delete that campaign first.',
+              irreversible: true,
+            }}
           >
             <input type="hidden" name="listId" value={list.id} />
           </ActionForm>
-        </CardContent>
-      </Card>
+        </SectionCard>
+      </div>
     </div>
   );
 }

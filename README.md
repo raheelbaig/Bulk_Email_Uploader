@@ -216,5 +216,5 @@ Every statement above is asserted by `tests/sending-gates.test.ts`,
 | P3 — Sender domains, identities and email authentication | Complete |
 | P4 — Templates, campaigns, preflight | Complete |
 | P5 — Sending engine | Complete, pending review. Off by default; see ADR-0003 §4 for the external setup before live use |
-| P6 — Events, bounces, unsubscribe | Not started (unsubscribe links and one-click were built in P5) |
+| P6 — Events, bounces, unsubscribe | Bounce/complaint ingestion built (migration 0016, `POST /api/webhooks/ses`, ADR-0005 Part 1); not applied or connected to SNS yet. Health auto-pause not built. Unsubscribe links and one-click were built in P5 |
 | P7 — Health, analytics, hardening | Not started |

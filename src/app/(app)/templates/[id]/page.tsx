@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { workspaceForPage } from '@/lib/auth/workspace';
 import { isAppError } from '@/lib/errors';
 import { getTemplate } from '@/lib/templates/service';
@@ -11,13 +11,14 @@ import {
   MAX_SUBJECT_CHARS,
   MAX_TEMPLATE_NAME_CHARS,
 } from '@/lib/templates/constants';
-import { STANDARD_VARIABLES } from '@/lib/templates/variables';
 import { deleteTemplateAction, updateTemplateAction } from '../actions';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
+import { PageHeader } from '@/components/page-header';
+import { SectionCard } from '@/components/section-card';
+import { TemplateBodyEditor } from '@/components/template-body-editor';
 import { MessagePreview } from '@/components/template-preview';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
+import { buttonVariants } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,36 +42,21 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Link
-            href="/templates"
-            className="flex items-center gap-1 text-sm text-(--color-muted-foreground)"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-            Templates
+      <PageHeader
+        back={{ href: '/templates', label: 'Templates' }}
+        title={template.name}
+        description="Edit your email and check how it looks in the preview. Campaigns that are already scheduled keep the email as it was when they were scheduled."
+        actions={
+          <Link href="/campaigns#new" className={buttonVariants({ variant: 'outline' })}>
+            <Send aria-hidden />
+            Use in a campaign
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{template.name}</h1>
-          <p className="text-sm text-(--color-muted-foreground)">
-            Version {template.version}
-            {template.variables.length > 0 && ` · uses ${template.variables.join(', ')}`}
-          </p>
-        </div>
-        <ActionForm
-          action={deleteTemplateAction}
-          submitLabel="Delete"
-          pendingLabel="Deleting…"
-          variant="destructive"
-          className="flex max-w-xs flex-col items-end gap-2"
-        >
-          <input type="hidden" name="templateId" value={template.id} />
-        </ActionForm>
-      </div>
+        }
+      />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Content</h2>
-          <ActionForm action={updateTemplateAction} submitLabel="Save changes" pendingLabel="Saving…">
+      <div className="grid gap-6 xl:grid-cols-2">
+        <SectionCard title="Content" description="The subject line, preview text and your email.">
+          <ActionForm action={updateTemplateAction} submitLabel="Save changes" pendingLabel="Saving…" size="default">
             <input type="hidden" name="templateId" value={template.id} />
             <Field
               name="name"
@@ -78,6 +64,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
               required
               defaultValue={template.name}
               maxLength={MAX_TEMPLATE_NAME_CHARS}
+              hint="Only your team sees this."
             />
             <Field
               name="subject"
@@ -91,42 +78,40 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
               label="Preview text"
               defaultValue={template.preview_text ?? ''}
               maxLength={MAX_PREVIEW_TEXT_CHARS}
+              hint="The short line shown after the subject in most inboxes."
             />
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="html" className="text-sm font-medium">
-                HTML body
-              </label>
-              <Textarea id="html" name="html" required rows={16} defaultValue={template.html} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="text" className="text-sm font-medium">
-                Plain-text version
-              </label>
-              <Textarea id="text" name="text" rows={8} defaultValue={template.text} />
-              <p className="text-xs text-(--color-muted-foreground)">
-                Clear this box and save to regenerate it from the HTML.
-              </p>
-            </div>
+            <TemplateBodyEditor defaultHtml={template.html} defaultText={template.text} />
           </ActionForm>
+        </SectionCard>
 
-          <div className="rounded-lg border px-4 py-3">
-            <p className="text-sm font-medium">Available fields</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {STANDARD_VARIABLES.map((name) => (
-                <Badge key={name}>{`{{${name}}}`}</Badge>
-              ))}
-              <Badge>{'{{custom.field}}'}</Badge>
-            </div>
-            <p className="mt-2 text-xs text-(--color-muted-foreground)">
-              Anything else is rejected when the template is saved. Templates substitute field
-              names only — they cannot contain logic or expressions.
-            </p>
-          </div>
-        </div>
+        <div className="flex flex-col gap-6">
+          <SectionCard
+            title="Preview"
+            description="How your email looks, filled in with a sample contact."
+          >
+            <MessagePreview preview={preview} />
+          </SectionCard>
 
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Preview</h2>
-          <MessagePreview preview={preview} />
+          <SectionCard
+            title="Delete template"
+            description="Campaigns that already sent or are scheduled keep their own copy of this email."
+            className="border-(--color-danger-border)"
+          >
+            <ActionForm
+              action={deleteTemplateAction}
+              submitLabel="Delete template"
+              pendingLabel="Deleting…"
+              variant="destructive"
+              confirm={{
+                title: `Delete “${template.name}”?`,
+                description:
+                  'The template is deleted. Campaigns that are scheduled or already sent keep their own copy of the email. A template that a draft campaign uses can’t be deleted — change that campaign first.',
+                irreversible: true,
+              }}
+            >
+              <input type="hidden" name="templateId" value={template.id} />
+            </ActionForm>
+          </SectionCard>
         </div>
       </div>
     </div>

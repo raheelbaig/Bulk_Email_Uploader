@@ -49,6 +49,8 @@ const FAKE_LIVE_CONFIG = {
   AWS_ACCESS_KEY_ID: 'AKIDPLACEHOLDER00000',
   AWS_SECRET_ACCESS_KEY: 'placeholder-not-a-real-secret-key',
   AWS_SES_CONFIGURATION_SET: 'placeholder-set',
+  // P6 live-gate requirement (event_pipeline). A placeholder, not a real topic.
+  AWS_SNS_TOPIC_ARN: 'arn:aws:sns:eu-west-1:000000000000:placeholder-topic',
 };
 
 const savedEnv = { ...process.env };

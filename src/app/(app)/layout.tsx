@@ -1,22 +1,11 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { FileText, Globe, LayoutDashboard, ListChecks, LogOut, Mail, Send, Settings, ShieldBan, Upload, Users } from 'lucide-react';
+import { cookies } from 'next/headers';
 import { getCurrentUser } from '@/lib/auth/session';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signOut } from '../(auth)/actions';
-import { Button } from '@/components/ui/button';
-import { EnvironmentBanner } from '@/components/environment-banner';
-
-const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/contacts', label: 'Contacts', icon: Users },
-  { href: '/lists', label: 'Lists', icon: ListChecks },
-  { href: '/imports', label: 'Import', icon: Upload },
-  { href: '/suppressions', label: 'Suppressions', icon: ShieldBan },
-  { href: '/senders', label: 'Senders', icon: Globe },
-  { href: '/templates', label: 'Templates', icon: FileText },
-  { href: '/campaigns', label: 'Campaigns', icon: Send },
-  { href: '/settings', label: 'Settings', icon: Settings },
-] as const;
+import { EnvironmentBanner, environmentBannerVisible } from '@/components/environment-banner';
+import { Sidebar } from '@/components/app-shell/sidebar';
+import { SIDEBAR_COOKIE } from '@/components/app-shell/constants';
 
 /**
  * The protected shell.
@@ -24,57 +13,61 @@ const NAV = [
  * Authorization is enforced here, in the layout, not in middleware — a route
  * accidentally excluded from a middleware matcher would be unprotected, whereas
  * a route placed under this layout cannot render without a session.
+ *
+ * Layout: the environment banner (sticky, full width) above a left sidebar and
+ * the page. Below `lg` the sidebar becomes a top bar with a navigation drawer.
+ * The page column is `min-w-0` so wide content (tables, code) scrolls inside
+ * itself and can never push the page sideways.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (user === null) redirect('/login');
 
+  const [workspaceName, cookieStore] = await Promise.all([readWorkspaceName(user.id), cookies()]);
+  const collapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === '1';
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <EnvironmentBanner />
-      {/*
-        Two rows: brand and account on top, navigation below. Nine links, the
-        address and Sign out do not fit one row of the max-w-5xl container at
-        any width, so the nav wraps on its own row and the account controls can
-        never be pushed off-screen. The address truncates; Sign out never shrinks.
-      */}
-      <header className="border-b">
-        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link href="/dashboard" className="flex shrink-0 items-center gap-2 font-semibold">
-              <Mail className="h-4 w-4" aria-hidden />
-              Email Uploader
-            </Link>
-            <div className="ml-auto flex min-w-0 items-center gap-3">
-              <span
-                className="hidden min-w-0 truncate text-sm text-(--color-muted-foreground) sm:block"
-                title={user.email}
-              >
-                {user.email}
-              </span>
-              <form action={signOut} className="shrink-0">
-                <Button type="submit" variant="ghost" size="sm">
-                  <LogOut className="h-3.5 w-3.5" aria-hidden />
-                  Sign out
-                </Button>
-              </form>
-            </div>
-          </div>
-          <nav aria-label="Main" className="-mx-2.5 flex flex-wrap items-center gap-1 text-sm">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 whitespace-nowrap hover:bg-(--color-muted)"
-              >
-                <item.icon className="h-3.5 w-3.5" aria-hidden />
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+      <div className="lg:flex">
+        <Sidebar
+          email={user.email}
+          workspaceName={workspaceName}
+          initialCollapsed={collapsed}
+          bannerOffset={environmentBannerVisible()}
+          signOutAction={signOut}
+        />
+        <main id="main" className="min-w-0 flex-1">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">{children}</div>
+        </main>
+      </div>
     </div>
   );
+}
+
+/**
+ * The workspace's display name for the sidebar. Read under the anon key, so RLS
+ * limits it to the user's own membership. Purely cosmetic: any failure renders
+ * the sidebar without a name rather than failing the page.
+ */
+async function readWorkspaceName(userId: string): Promise<string | null> {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: member } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (member === null) return null;
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('name')
+      .eq('id', String(member.workspace_id))
+      .maybeSingle();
+    return workspace?.name === undefined || workspace.name === null ? null : String(workspace.name);
+  } catch {
+    return null;
+  }
 }

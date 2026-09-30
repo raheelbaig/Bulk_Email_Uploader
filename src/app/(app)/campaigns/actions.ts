@@ -7,6 +7,7 @@ import { isAppError } from '@/lib/errors';
 import { logger } from '@/lib/observability/logger';
 import { newRequestId, runWithContext } from '@/lib/observability/context';
 import type { FormState } from '@/lib/form-state';
+import { readCheckbox } from '@/lib/form-fields';
 import {
   cancelCampaign,
   createCampaign,
@@ -69,7 +70,8 @@ export async function createCampaignAction(_prev: FormState, form: FormData): Pr
     const { workspaceId } = await currentWorkspace();
     const campaign = await createCampaign(workspaceId, {
       name: text(form, 'name'),
-      requiresUnsubscribe: form.get('requiresUnsubscribe') === 'false' ? 'false' : 'true',
+      // Unticked → 'false'; absent → undefined (the service defaults to true).
+      requiresUnsubscribe: readCheckbox(form, 'requiresUnsubscribe'),
     });
     createdId = campaign.id;
 
@@ -96,9 +98,8 @@ export async function updateCampaignAction(_prev: FormState, form: FormData): Pr
     for (const key of ['name', 'listId', 'senderIdentityId', 'templateId', 'scheduledAtLocal'] as const) {
       if (form.has(key)) input[key] = text(form, key);
     }
-    if (form.has('requiresUnsubscribe')) {
-      input['requiresUnsubscribe'] = text(form, 'requiresUnsubscribe');
-    }
+    const requiresUnsubscribe = readCheckbox(form, 'requiresUnsubscribe');
+    if (requiresUnsubscribe !== undefined) input['requiresUnsubscribe'] = requiresUnsubscribe;
 
     await updateCampaignDraft(workspaceId, campaignId, input);
     refresh(campaignId);
@@ -116,9 +117,12 @@ export async function runPreflightAction(_prev: FormState, form: FormData): Prom
     refresh(campaignId);
 
     if (result.ready) {
+      // The "check" run treats a missing send time as a notice; scheduling does
+      // not. Don't say "can be scheduled" while it still can't.
+      const timeMissing = result.info.some((issue) => issue.code === 'schedule_missing');
       return {
         ok: true,
-        message: `Checks passed${result.warnings.length > 0 ? ` with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}` : ''}. This campaign can be scheduled.`,
+        message: `Checks passed${result.warnings.length > 0 ? ` with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}` : ''}. ${timeMissing ? 'Choose when this campaign should be sent, then schedule it.' : 'This campaign can be scheduled.'}`,
       };
     }
     return {
@@ -131,8 +135,8 @@ export async function runPreflightAction(_prev: FormState, form: FormData): Prom
 /**
  * Freezes the template and records the schedule.
  *
- * The wording of the success message is deliberate: it says the campaign will
- * not be delivered. A person who schedules something and is not told that would
+ * The wording of the success message is deliberate: it says whether the
+ * campaign will be delivered. A person who schedules something and is not told that would
  * reasonably assume it went out.
  */
 export async function scheduleCampaignAction(_prev: FormState, form: FormData): Promise<FormState> {
@@ -143,14 +147,14 @@ export async function scheduleCampaignAction(_prev: FormState, form: FormData): 
     const { campaign } = await scheduleCampaign(workspaceId, campaignId);
     refresh(campaignId);
 
-    const approval =
+    const message =
       campaign.approved_send_mode === 'live'
-        ? 'It is approved for LIVE sending and will be delivered to real recipients at the scheduled time.'
+        ? 'Campaign scheduled. It will be sent to its recipients at the scheduled time.'
         : campaign.approved_send_mode === 'dry_run'
-          ? 'It is approved for a dry run only: at the scheduled time it runs through the pipeline and nothing is delivered.'
-          : 'Sending is disabled, so it will not start. If sending is enabled later, it is held until you schedule it again.';
+          ? 'Campaign scheduled in test mode. At the scheduled time every step runs, but no email is delivered.'
+          : 'Campaign scheduled. Email sending is turned off, so it won’t be sent. If sending is turned on later, you’ll need to schedule it again.';
 
-    return { ok: true, message: `Campaign scheduled and its content frozen. ${approval}` };
+    return { ok: true, message };
   });
 }
 
@@ -162,7 +166,7 @@ export async function unscheduleCampaignAction(_prev: FormState, form: FormData)
     await unscheduleCampaign(workspaceId, campaignId);
     refresh(campaignId);
 
-    return { ok: true, message: 'Campaign returned to draft. Its frozen content was cleared.' };
+    return { ok: true, message: 'Campaign moved back to draft. You can make changes and schedule it again.' };
   });
 }
 
@@ -197,7 +201,7 @@ export async function pauseSendingAction(_prev: FormState, form: FormData): Prom
     refresh(campaignId);
     return {
       ok: true,
-      message: 'Paused. Messages already handed to Amazon SES cannot be recalled; nothing further will go out.',
+      message: 'Paused. Emails that already went out can’t be recalled; nothing further will be sent.',
     };
   });
 }
@@ -208,7 +212,7 @@ export async function resumeSendingAction(_prev: FormState, form: FormData): Pro
     const campaignId = text(form, 'campaignId');
     await resumeSending(workspaceId, campaignId);
     refresh(campaignId);
-    return { ok: true, message: 'Checks passed. The campaign will continue on the next worker run.' };
+    return { ok: true, message: 'Checks passed. The campaign will continue shortly.' };
   });
 }
 

@@ -96,6 +96,19 @@ function parseName(input: unknown): string {
 }
 
 /**
+ * Whether the campaign carries an unsubscribe link.
+ *
+ * Only an explicit `false` / `'false'` turns it off. Absent input keeps the
+ * safe default (on), and so does anything unrecognised — a malformed value can
+ * never be the thing that removes the link. Forms send `'false'` for a rendered
+ * but unticked checkbox (see `lib/form-fields`).
+ */
+export function parseRequiresUnsubscribe(input: unknown): boolean {
+  if (input === false || input === 'false') return false;
+  return true;
+}
+
+/**
  * Reads an optional reference from a form.
  *
  * An empty string clears the reference; a malformed one is refused here rather
@@ -217,7 +230,7 @@ export async function createCampaign(
   const name = parseName(input.name);
   // Defaults to true. Marketing mail is the common case and the safe default;
   // opting out is a deliberate act recorded on the row and shown at preflight.
-  const requiresUnsubscribe = input.requiresUnsubscribe === undefined ? true : input.requiresUnsubscribe !== 'false';
+  const requiresUnsubscribe = parseRequiresUnsubscribe(input.requiresUnsubscribe);
 
   const repository = await campaignRepository(access.workspaceId);
   const campaign = await repository.insert({ name, requiresUnsubscribe });
@@ -284,7 +297,7 @@ export async function updateCampaignDraft(
   if (templateId !== undefined) patch.templateId = templateId;
 
   if (input.requiresUnsubscribe !== undefined) {
-    patch.requiresUnsubscribe = input.requiresUnsubscribe !== 'false' && input.requiresUnsubscribe !== false;
+    patch.requiresUnsubscribe = parseRequiresUnsubscribe(input.requiresUnsubscribe);
   }
 
   if (input.scheduledAtLocal !== undefined) {

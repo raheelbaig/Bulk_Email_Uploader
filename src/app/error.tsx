@@ -1,5 +1,6 @@
 'use client';
 
+import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -17,15 +18,21 @@ export default function ErrorBoundary({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="flex max-w-md flex-col items-start gap-4">
-        <h1 className="text-lg font-semibold">Something went wrong on our side.</h1>
-        <p className="text-sm text-(--color-muted-foreground)">
-          Try again shortly. If it keeps happening, quote this reference when you get in touch.
-        </p>
+      <div className="flex max-w-md flex-col items-center gap-4 text-center">
+        <div className="flex size-11 items-center justify-center rounded-xl border border-(--color-danger-border) bg-(--color-danger-subtle) text-(--color-danger)">
+          <AlertTriangle className="size-5" aria-hidden />
+        </div>
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">Something went wrong</h1>
+          <p className="mt-1.5 text-sm leading-relaxed text-(--color-muted-foreground)">
+            Please try again shortly. If it keeps happening, quote this reference when you get in touch.
+          </p>
+        </div>
         {error.digest !== undefined && (
-          <code className="rounded bg-(--color-muted) px-2 py-1 text-xs">{error.digest}</code>
+          <code className="rounded-md border bg-(--color-muted) px-2 py-1 text-xs">{error.digest}</code>
         )}
-        <Button onClick={reset} size="sm">
+        <Button onClick={reset}>
+          <RotateCcw aria-hidden />
           Try again
         </Button>
       </div>

@@ -182,19 +182,27 @@ describe('next.config security headers', () => {
   });
 });
 
-describe('the app header cannot overflow', () => {
-  // Regression: brand, nine links, the address and Sign out sat in one
-  // non-wrapping row of a max-w-5xl container, so at 1400px and below the row
-  // overflowed and Sign out was pushed off-screen. Verified in a browser at
-  // 1920–320px; these pin the structure that makes it hold.
+describe('the app navigation cannot overflow', () => {
+  // Regression: brand, nine links, the address and Sign out once sat in one
+  // non-wrapping header row, so at 1400px and below the row overflowed and Sign
+  // out was pushed off-screen. Navigation now lives in a left sidebar (a drawer
+  // below lg); these pin the structure that keeps every control reachable at
+  // 1920–320px.
   const layout = readFileSync(join(SRC, 'app', '(app)', 'layout.tsx'), 'utf8');
+  const sidebar = readFileSync(join(SRC, 'components', 'app-shell', 'sidebar.tsx'), 'utf8');
 
-  it('the navigation wraps on its own row', () => {
-    expect(layout).toMatch(/<nav[^>]*className="[^"]*\bflex-wrap\b/);
+  it('the page column can shrink, so wide content cannot push the page sideways', () => {
+    expect(layout).toMatch(/<main[^>]*className="[^"]*\bmin-w-0\b/);
+  });
+
+  it('the sidebar is desktop-only and small screens get a drawer with the same navigation', () => {
+    expect(sidebar).toMatch(/<aside[\s\S]*?className=\{cn\(\s*'[^']*\bhidden\b[^']*\blg:flex\b/);
+    expect(sidebar).toMatch(/<dialog[\s\S]*?<NavList/);
+    expect(sidebar).toMatch(/showModal\(\)/);
   });
 
   it('Sign out cannot shrink and the address truncates instead', () => {
-    expect(layout).toMatch(/<form action=\{signOut\} className="[^"]*\bshrink-0\b/);
-    expect(layout).toMatch(/className="[^"]*\btruncate\b[^"]*"\s+title=\{user\.email\}/);
+    expect(sidebar).toMatch(/<form action=\{signOutAction\} className="[^"]*\bshrink-0\b/);
+    expect(sidebar).toMatch(/className="[^"]*\btruncate\b[^"]*"\s+title=\{email\}/);
   });
 });

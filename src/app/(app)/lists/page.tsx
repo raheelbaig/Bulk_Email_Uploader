@@ -1,13 +1,17 @@
 import Link from 'next/link';
-import { ListPlus } from 'lucide-react';
+import { ChevronRight, ListChecks, Plus, Users } from 'lucide-react';
 import { workspaceForPage } from '@/lib/auth/workspace';
 import { listContactLists } from '@/lib/lists/service';
 import { decodeCursor, encodeCursor, type PageDirection } from '@/lib/pagination';
 import { createListAction } from '../actions';
 import { ActionForm } from '@/components/action-form';
+import { CreatePanel } from '@/components/create-panel';
 import { Field } from '@/components/field';
+import { PageHeader } from '@/components/page-header';
 import { Pager } from '@/components/pager';
-import { Table, THead, TBody, TR, TH, TD, EmptyState } from '@/components/ui/table';
+import { buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,56 +33,98 @@ export default async function ListsPage({
     cursor: decodeCursor(one('cursor')),
     direction,
   });
+  const firstPage = one('cursor') === undefined;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Lists</h1>
-        <p className="text-sm text-(--color-muted-foreground)">
-          Groups of contacts. A campaign is sent to one list.
-        </p>
-      </div>
+      <PageHeader
+        title="Lists"
+        description="Organize contacts into audiences. Each campaign is sent to one list."
+        actions={
+          <Link href="#new" className={buttonVariants()}>
+            <Plus aria-hidden />
+            Create list
+          </Link>
+        }
+      />
 
-      <details className="rounded-lg border">
-        <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
-          <ListPlus className="h-4 w-4" aria-hidden />
-          Create a list
-        </summary>
-        <div className="border-t px-4 py-4">
-          <ActionForm action={createListAction} submitLabel="Create list" pendingLabel="Creating…">
-            <Field name="name" label="Name" required maxLength={120} placeholder="Newsletter" />
-          </ActionForm>
-        </div>
-      </details>
+      <CreatePanel
+        title="Create a list"
+        description="Give it a name that describes who’s on it. You can add contacts from a contact’s page or while importing."
+      >
+        <ActionForm
+          action={createListAction}
+          submitLabel="Create list"
+          pendingLabel="Creating…"
+          size="default"
+          className="flex flex-col gap-4 sm:max-w-md"
+        >
+          <Field name="name" label="List name" required maxLength={120} placeholder="e.g. Newsletter subscribers" />
+        </ActionForm>
+      </CreatePanel>
 
-      {page.items.length === 0 ? (
-        <EmptyState>No lists yet. Create one above.</EmptyState>
+      {page.items.length === 0 && firstPage ? (
+        <EmptyState
+          icon={ListChecks}
+          title="No lists yet"
+          description="Lists help you organize contacts so you can choose exactly who receives a campaign — for example “Newsletter” or “Customers in London”."
+          action={
+            <Link href="#new" className={buttonVariants()}>
+              <Plus aria-hidden />
+              Create your first list
+            </Link>
+          }
+          secondaryAction={
+            <Link href="/imports" className={buttonVariants({ variant: 'outline' })}>
+              Import contacts into a list
+            </Link>
+          }
+        />
       ) : (
         <>
           <Table>
             <THead>
               <TR>
-                <TH>Name</TH>
-                <TH>Contacts</TH>
-                <TH>Created</TH>
-                <TH className="text-right">Actions</TH>
+                <TH>List</TH>
+                <TH className="text-right">Contacts</TH>
+                <TH className="hidden sm:table-cell">Created</TH>
+                <TH className="w-10">
+                  <span className="sr-only">Open</span>
+                </TH>
               </TR>
             </THead>
             <TBody>
               {page.items.map((list) => (
-                <TR key={list.id}>
-                  <TD className="font-medium">{list.name}</TD>
-                  <TD>{list.contact_count}</TD>
-                  <TD className="whitespace-nowrap text-(--color-muted-foreground)">
-                    {new Date(list.created_at).toLocaleDateString()}
-                  </TD>
-                  <TD className="text-right">
+                <TR key={list.id} className="group relative">
+                  <TD>
                     <Link
                       href={`/lists/${list.id}`}
-                      className="text-sm underline underline-offset-4"
+                      className="flex items-center gap-3 font-medium after:absolute after:inset-0 focus-visible:outline-none after:focus-visible:ring-2 after:focus-visible:ring-(--color-ring) after:focus-visible:ring-inset"
                     >
-                      View members
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-(--color-surface-subtle) text-(--color-muted-foreground)">
+                        <ListChecks className="size-4" aria-hidden />
+                      </span>
+                      <span className="min-w-0 truncate">{list.name}</span>
                     </Link>
+                  </TD>
+                  <TD className="text-right tabular-nums">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Users className="size-3.5 text-(--color-muted-foreground)" aria-hidden />
+                      {list.contact_count.toLocaleString()}
+                    </span>
+                  </TD>
+                  <TD className="hidden whitespace-nowrap text-(--color-muted-foreground) sm:table-cell">
+                    {new Date(list.created_at).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </TD>
+                  <TD className="text-(--color-muted-foreground)">
+                    <ChevronRight
+                      className="size-4 transition-transform group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
                   </TD>
                 </TR>
               ))}
@@ -91,6 +137,7 @@ export default async function ListsPage({
             nextCursor={page.nextCursor === null ? null : encodeCursor(page.nextCursor)}
             prevCursor={page.prevCursor === null ? null : encodeCursor(page.prevCursor)}
             showing={page.items.length}
+            noun="list"
           />
         </>
       )}

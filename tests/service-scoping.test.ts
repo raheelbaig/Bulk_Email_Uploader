@@ -129,6 +129,7 @@ describe('tenant column mapping', () => {
       schema.emailJobs,
       schema.sendAttempts,
       schema.rateLedger,
+      schema.providerEvents,
     ].map((t) => getTableConfig(t).name);
 
     const accounted = [...Object.keys(TENANT_COLUMN), ...TENANTLESS_TABLES];

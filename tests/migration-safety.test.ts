@@ -229,11 +229,12 @@ describe('migrations 0011–0014 against a production-like database', () => {
     await pg.close();
   });
 
-  it('the migration set on disk is exactly 0001–0015, with 0011–0014 then 0015 last', () => {
+  it('the migration set on disk is exactly 0001–0016, with 0011–0014, then 0015, then 0016 last', () => {
     const files = migrationFiles();
-    expect(files.slice(-5, -1)).toEqual(NEW_MIGRATIONS);
-    expect(files.at(-1)).toBe(M0015);
-    expect(files).toHaveLength(15);
+    expect(files.slice(-6, -2)).toEqual(NEW_MIGRATIONS);
+    expect(files.at(-2)).toBe(M0015);
+    expect(files.at(-1)).toBe(M0016);
+    expect(files).toHaveLength(16);
   });
 });
 
@@ -334,6 +335,76 @@ describe('migration 0015 against a production-like database', () => {
     expect(await schemaFingerprint(db)).toBe(expected);
     expect(await dataSnapshot(db)).toBe(before);
     await apply(pg, M0015);
+    await pg.close();
+  });
+});
+
+// ── 0016: P6 provider events (SES bounces and complaints over SNS) ──────────
+//
+// Additive: a new service-role table, new service-role functions, a guard
+// trigger on suppressions that only forbids rewrites nobody could make before,
+// and three more job transitions. Production is at 0015 when this is written.
+
+const M0016 = '0016_provider_events.sql';
+const ROLLBACK_0016 = readFileSync(join(process.cwd(), 'supabase', 'ops', 'rollback_0016.sql'), 'utf8');
+
+async function jobsSnapshot(db: TestDb): Promise<string> {
+  return JSON.stringify((await db.raw(`select id, status::text, to_email, provider_message_id from email_jobs order by id`)).rows);
+}
+
+describe('migration 0016 against a production-like database', () => {
+  it('applies cleanly over 0015, changing no row and keeping suppressions of every reason', async () => {
+    const { pg, db } = await databaseAt(M0015);
+    const { workspaceId, scheduledId } = await seedProductionLikeState(db);
+    await seedJob(db, workspaceId, scheduledId, 'kept@example.com');
+    const before = await dataSnapshot(db);
+    const jobsBefore = await jobsSnapshot(db);
+
+    await apply(pg, M0016);
+
+    expect(await dataSnapshot(db)).toBe(before);
+    expect(await jobsSnapshot(db)).toBe(jobsBefore);
+    const table = await db.raw<{ forced: boolean }>(
+      `select relforcerowsecurity as forced from pg_class where oid = 'public.provider_events'::regclass`,
+    );
+    expect(table.rows).toEqual([{ forced: true }]);
+    await pg.close();
+  });
+
+  it('an existing reversible suppression can still be removed by its owner after 0016', async () => {
+    const { pg, db } = await databaseAt(M0016);
+    const owner = await db.createUser('owner-0016@example.test');
+    await seedSuppression(db, owner.workspaceId, 'blocked@example.com', 'manually_blocked');
+    const deleted = await db.asUser(owner.userId, (as) =>
+      as.raw(`delete from suppressions where email_normalized = 'blocked@example.com'`),
+    );
+    expect(deleted.affectedRows).toBe(1);
+    await pg.close();
+  });
+
+  it('rollback_0016 returns the schema exactly to 0015, keeps every row and event-created suppressions, and 0016 re-applies', async () => {
+    const reference = await databaseAt(M0015);
+    const expected = await schemaFingerprint(reference.db);
+    await reference.pg.close();
+
+    const { pg, db } = await databaseAt(M0015);
+    const { workspaceId, scheduledId } = await seedProductionLikeState(db);
+    await seedJob(db, workspaceId, scheduledId, 'kept@example.com');
+    await apply(pg, M0016);
+
+    // A suppression written by an event while 0016 was live must survive.
+    await seedSuppression(db, workspaceId, 'bounced-by-ses@example.com', 'hard_bounce', 'ses_event');
+    await db.raw(
+      `insert into provider_events (sns_message_id, event_type, sns_timestamp, outcome) values ('sns-1', 'delivery', now(), 'ignored')`,
+    );
+    const before = await dataSnapshot(db);
+
+    await pg.exec(ROLLBACK_0016);
+
+    expect(await schemaFingerprint(db)).toBe(expected);
+    expect(await dataSnapshot(db)).toBe(before);
+    expect(before).toContain('bounced-by-ses@example.com');
+    await apply(pg, M0016);
     await pg.close();
   });
 });
