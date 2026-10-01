@@ -113,6 +113,11 @@ export const PAUSE_REASON_LABEL: Record<string, string> = {
     'The scheduled time passed while the service was unavailable. It has not been sent. Review it and schedule it again when ready.',
   paused_by_user: 'Paused by a member of this workspace.',
   provider_halt: 'Amazon SES refused to send for this account. Sending stopped automatically; check the account before resuming.',
+  // Migration 0017: the health guard, run when a bounce or complaint arrives.
+  bounce_rate_high:
+    'At least 4% of this workspace’s recent messages bounced, which is close to the level where Amazon SES reviews or pauses an account. Sending stopped automatically. Clean the list (bounced addresses are already blocked) before resuming.',
+  complaint_rate_high:
+    'Recipients marked recent messages as spam at a rate Amazon SES treats as a warning sign. Sending stopped automatically. Check that everyone on the list asked to hear from you before resuming.',
   sender_not_ready: 'The sender address stopped passing verification. Sending stopped automatically.',
   unsubscribe_unavailable: 'Unsubscribe links could not be signed. Sending stopped automatically.',
   postal_address_missing:

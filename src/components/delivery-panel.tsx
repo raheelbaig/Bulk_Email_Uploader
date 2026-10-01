@@ -18,6 +18,11 @@ type Action = (state: FormState, form: FormData) => Promise<FormState>;
 
 const ROWS: Array<{ key: keyof DeliverySummary['counts']; label: string }> = [
   { key: 'sent', label: 'Sent' },
+  // Set by Amazon SES delivery reports (P6). A job moves on from `sent`, so
+  // these are not part of the Sent figure.
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'bounced', label: 'Bounced' },
+  { key: 'complained', label: 'Marked as spam' },
   { key: 'pending', label: 'Waiting to send' },
   { key: 'claimed', label: 'Sending now' },
   { key: 'send_uncertain', label: 'Unconfirmed' },
@@ -76,9 +81,9 @@ export function DeliveryPanel({
             <div
               key={row.key}
               className={
-                row.key === 'sent'
+                row.key === 'sent' || row.key === 'delivered'
                   ? 'rounded-lg border border-(--color-success-border) bg-(--color-success-subtle) px-3 py-2.5'
-                  : row.key === 'failed' || row.key === 'send_uncertain'
+                  : row.key === 'failed' || row.key === 'send_uncertain' || row.key === 'bounced' || row.key === 'complained'
                     ? 'rounded-lg border border-(--color-warning-border) bg-(--color-warning-subtle) px-3 py-2.5'
                     : 'rounded-lg border px-3 py-2.5'
               }

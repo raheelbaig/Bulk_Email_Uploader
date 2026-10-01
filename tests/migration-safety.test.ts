@@ -229,12 +229,13 @@ describe('migrations 0011–0014 against a production-like database', () => {
     await pg.close();
   });
 
-  it('the migration set on disk is exactly 0001–0016, with 0011–0014, then 0015, then 0016 last', () => {
+  it('the migration set on disk is exactly 0001–0017, with 0011–0014, then 0015, 0016, and 0017 last', () => {
     const files = migrationFiles();
-    expect(files.slice(-6, -2)).toEqual(NEW_MIGRATIONS);
-    expect(files.at(-2)).toBe(M0015);
-    expect(files.at(-1)).toBe(M0016);
-    expect(files).toHaveLength(16);
+    expect(files.slice(-7, -3)).toEqual(NEW_MIGRATIONS);
+    expect(files.at(-3)).toBe(M0015);
+    expect(files.at(-2)).toBe(M0016);
+    expect(files.at(-1)).toBe(M0017);
+    expect(files).toHaveLength(17);
   });
 });
 
@@ -405,6 +406,72 @@ describe('migration 0016 against a production-like database', () => {
     expect(await dataSnapshot(db)).toBe(before);
     expect(before).toContain('bounced-by-ses@example.com');
     await apply(pg, M0016);
+    await pg.close();
+  });
+});
+
+// ── 0017: Send / Delivery / Reject, reconciliation, health, retention ───────
+//
+// Additive: new service-role functions, one new read function for members,
+// one index, one more job transition (sent → failed), and 0016's bounce and
+// complaint functions re-created with the attempt number. Production is at
+// 0016 when this is written.
+
+const M0017 = '0017_event_reconciliation.sql';
+const ROLLBACK_0017 = readFileSync(join(process.cwd(), 'supabase', 'ops', 'rollback_0017.sql'), 'utf8');
+
+describe('migration 0017 against a production-like database', () => {
+  it('applies cleanly over 0016, changing no row', async () => {
+    const { pg, db } = await databaseAt(M0016);
+    const { workspaceId, scheduledId } = await seedProductionLikeState(db);
+    await seedJob(db, workspaceId, scheduledId, 'kept@example.com');
+    await db.raw(
+      `insert into provider_events (sns_message_id, event_type, sns_timestamp, outcome) values ('sns-before-0017', 'delivery', now(), 'ignored')`,
+    );
+    const before = await dataSnapshot(db);
+    const jobsBefore = await jobsSnapshot(db);
+
+    await apply(pg, M0017);
+
+    expect(await dataSnapshot(db)).toBe(before);
+    expect(await jobsSnapshot(db)).toBe(jobsBefore);
+    // Exactly one signature of each event function: PostgREST never chooses.
+    const fns = await db.raw<{ proname: string; n: number }>(
+      `select proname, count(*)::int as n from pg_proc
+        where proname in ('events_record_bounce', 'events_record_complaint', 'events_record_send',
+                          'events_record_delivery', 'events_record_reject', 'events_record_ignored')
+        group by proname order by proname`,
+    );
+    expect(fns.rows).toEqual([
+      { proname: 'events_record_bounce', n: 1 },
+      { proname: 'events_record_complaint', n: 1 },
+      { proname: 'events_record_delivery', n: 1 },
+      { proname: 'events_record_ignored', n: 1 },
+      { proname: 'events_record_reject', n: 1 },
+      { proname: 'events_record_send', n: 1 },
+    ]);
+    await pg.close();
+  });
+
+  it('rollback_0017 returns the schema exactly to 0016, keeps every row, and 0017 re-applies', async () => {
+    const reference = await databaseAt(M0016);
+    const expected = await schemaFingerprint(reference.db);
+    await reference.pg.close();
+
+    const { pg, db } = await databaseAt(M0016);
+    const { workspaceId, scheduledId } = await seedProductionLikeState(db);
+    await seedJob(db, workspaceId, scheduledId, 'kept@example.com');
+    await apply(pg, M0017);
+    await db.raw(
+      `insert into provider_events (sns_message_id, event_type, sns_timestamp, outcome) values ('sns-during-0017', 'send', now(), 'unmatched')`,
+    );
+    const before = await dataSnapshot(db);
+
+    await pg.exec(ROLLBACK_0017);
+
+    expect(await schemaFingerprint(db)).toBe(expected);
+    expect(await dataSnapshot(db)).toBe(before);
+    await apply(pg, M0017);
     await pg.close();
   });
 });

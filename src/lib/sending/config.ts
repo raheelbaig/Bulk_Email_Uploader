@@ -1,6 +1,6 @@
 import 'server-only';
 import { serverEnv } from '@/lib/env';
-import { evaluateLiveGate, type LiveGateVerdict, type SendingMode } from './gate';
+import { evaluateLiveGate, eventPipelineConfigured, type LiveGateVerdict, type SendingMode } from './gate';
 
 /**
  * The sending engine's view of the environment.
@@ -51,7 +51,7 @@ export function sendingConfig(): SendingConfig {
         env.AWS_ACCESS_KEY_ID !== undefined &&
         env.AWS_SECRET_ACCESS_KEY !== undefined,
       hasConfigurationSet: env.AWS_SES_CONFIGURATION_SET !== undefined,
-      hasEventPipeline: env.AWS_SNS_TOPIC_ARN !== undefined,
+      hasEventPipeline: eventPipelineConfigured(env.AWS_SNS_TOPIC_ARN, env.AWS_REGION, env.AWS_ACCOUNT_ID),
       hasUnsubscribeSecret: unsubscribeConfigured,
       hasWorkerSecret: env.WORKER_HMAC_SECRET !== undefined,
       appUrl: env.NEXT_PUBLIC_APP_URL,

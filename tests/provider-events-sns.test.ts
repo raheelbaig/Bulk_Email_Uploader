@@ -14,7 +14,10 @@ import {
   bounceEvent,
   complaintEvent,
   createTestSigner,
+  deliveryEvent,
   notification,
+  rejectEvent,
+  sendEvent,
   signEnvelope,
   subscriptionConfirmation,
   type Envelope,
@@ -256,10 +259,29 @@ describe('SES event parsing', () => {
     expect(parseSesEvent(JSON.stringify(event))).toMatchObject({ ok: true, event: { kind: 'bounce' } });
   });
 
+  it('Send, Delivery and Reject keep their tags (including attempt_no) and recipients (0017)', () => {
+    const tagged = { ...target, attemptNo: 2, recipients: ['Person@Example.com'] };
+    expect(parseSesEvent(JSON.stringify(sendEvent(tagged)))).toMatchObject({
+      ok: true,
+      event: { kind: 'send', messageId: target.messageId, workspaceId: WS, jobId: JOB, attemptNo: 2, recipients: ['person@example.com'] },
+    });
+    expect(parseSesEvent(JSON.stringify(deliveryEvent(tagged)))).toMatchObject({
+      ok: true,
+      event: { kind: 'delivery', attemptNo: 2, recipients: ['person@example.com'] },
+    });
+    expect(parseSesEvent(JSON.stringify(rejectEvent(tagged)))).toMatchObject({
+      ok: true,
+      event: { kind: 'reject', attemptNo: 2, reason: 'Bad content', recipients: ['person@example.com'] },
+    });
+  });
+
+  it.each(['0', '6', '1; drop', 'one', ''])('an attempt_no tag of %j is discarded', (value) => {
+    const event = sendEvent(target) as { mail: { tags: Record<string, string[]> } };
+    event.mail.tags['attempt_no'] = [value];
+    expect(parseSesEvent(JSON.stringify(event))).toMatchObject({ ok: true, event: { attemptNo: null } });
+  });
+
   it.each([
-    ['Delivery', 'delivery'],
-    ['Send', 'send'],
-    ['Reject', 'reject'],
     ['DeliveryDelay', 'delivery_delay'],
     ['Rendering Failure', 'rendering_failure'],
     ['Open', 'open'],
@@ -292,6 +314,11 @@ describe('SES event parsing', () => {
     ['a bounce with an unknown type', JSON.stringify(bounceEvent(target, { bounceType: 'Soft' })), 'malformed_bounce'],
     ['a bounce with no bounce object', JSON.stringify({ eventType: 'Bounce', mail: { messageId: 'a' } }), 'malformed_bounce'],
     ['a complaint without recipients', JSON.stringify(complaintEvent({ ...target, recipients: [] })), 'malformed_complaint'],
+    ['a Send without a message id', JSON.stringify({ eventType: 'Send', mail: { destination: ['a@example.com'] } }), 'missing_message_id'],
+    ['a Send without a destination', JSON.stringify({ eventType: 'Send', mail: { messageId: 'a' } }), 'malformed_mail'],
+    ['a Reject without a destination', JSON.stringify({ eventType: 'Reject', mail: { messageId: 'a', destination: [] } }), 'malformed_mail'],
+    ['a Delivery without recipients', JSON.stringify(deliveryEvent({ ...target, recipients: [] })), 'malformed_delivery'],
+    ['a Delivery with no delivery object', JSON.stringify({ eventType: 'Delivery', mail: { messageId: 'a' } }), 'malformed_delivery'],
     [
       'a complaint with an injected feedback type',
       JSON.stringify(complaintEvent(target, "abuse'; drop table suppressions; --")),

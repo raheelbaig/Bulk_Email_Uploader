@@ -108,12 +108,22 @@ select cron.schedule(
   $$ delete from public.rate_ledger where window_start < now() - interval '2 days' $$
 );
 
+-- SES event ledger retention (migration 0017). 90 days; the function refuses
+-- anything under 30 and deletes at most 5,000 rows a run. Jobs, suppressions
+-- and audit rows keep their own record, so only the raw ledger ages out.
+select cron.schedule(
+  'prune-provider-events',
+  '41 3 * * *',
+  $$ select public.events_prune(90) $$
+);
+
 -- =============================================================================
 -- To stop the clock:
 --
 --   select cron.unschedule('send-tick');
 --   select cron.unschedule('prune-net-responses');
 --   select cron.unschedule('prune-rate-ledger');
+--   select cron.unschedule('prune-provider-events');
 --
 -- Stopping the clock stops new work. Campaigns and jobs stay exactly where they
 -- are, and resume from there if the schedule is applied again.

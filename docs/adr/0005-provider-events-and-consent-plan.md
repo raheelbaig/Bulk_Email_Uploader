@@ -1,6 +1,6 @@
 # ADR-0005 — Implementation plan: SES bounce/complaint ingestion (P6) and consent tracking
 
-Status: Part 1 **implemented, not applied or enabled** (2026-09-30, migration 0016 — see §1.8); Part 2 **proposed**. It expands ADR-0004 §4–§5 into work items.
+Status: Part 1 **implemented**. Migration 0016 (§1.8) was applied to production on 2026-10-01. Its open items (Send/Delivery/Reject, the health view and auto-pause, retention) are completed by migration 0017 and [ADR-0006](0006-event-reconciliation-and-health.md). Part 2 is **proposed**. It expands ADR-0004 §4–§5 into work items.
 Date: 2026-09-26
 
 ---

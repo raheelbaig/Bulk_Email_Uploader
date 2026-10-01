@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { listSenderIdentities } from '@/lib/sender/identities';
 import { getSendingSettings } from '@/lib/workspace/settings';
 import { listCampaigns, workspaceTimeZone, type CampaignRecord } from '@/lib/campaigns/service';
+import type { SendHealth } from '@/lib/sending/health';
 
 /**
  * Read-only figures for the dashboard.
@@ -29,6 +30,8 @@ export interface DashboardData {
   postalAddressSet: boolean | null;
   recentCampaigns: CampaignRecord[];
   recentActivity: Array<{ action: string; created_at: string }>;
+  /** Last 500 live messages (migration 0017). Null when it could not be read. */
+  health: SendHealth | null;
 }
 
 type CountTable = 'contacts' | 'contact_lists' | 'templates' | 'campaigns' | 'imports' | 'sender_domains';
@@ -69,6 +72,7 @@ export async function loadDashboard(workspaceId: string): Promise<DashboardData>
     campaignPage,
     timeZone,
     activity,
+    health,
   ] = await Promise.all([
     soft<{ data: unknown }>(
       Promise.resolve(supabase.from('workspaces').select('name').eq('id', workspaceId).maybeSingle()),
@@ -90,6 +94,10 @@ export async function loadDashboard(workspaceId: string): Promise<DashboardData>
       ),
       { data: null },
     ),
+    soft<{ data: unknown }>(
+      Promise.resolve(supabase.rpc('workspace_send_health', { p_workspace_id: workspaceId })),
+      { data: null },
+    ),
   ]);
 
   const name = (workspace.data as { name?: unknown } | null)?.name;
@@ -108,5 +116,13 @@ export async function loadDashboard(workspaceId: string): Promise<DashboardData>
       action: String(row.action),
       created_at: String(row.created_at),
     })),
+    health: toHealth(health.data),
   };
+}
+
+function toHealth(data: unknown): SendHealth | null {
+  const row = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : undefined;
+  if (row === undefined) return null;
+  const n = (value: unknown) => (typeof value === 'number' ? value : Number(value ?? 0));
+  return { sample: n(row['sample']), bounced: n(row['bounced']), complained: n(row['complained']) };
 }

@@ -4,7 +4,10 @@ import {
   bounceEvent,
   complaintEvent,
   createTestSigner,
+  deliveryEvent,
   notification,
+  rejectEvent,
+  sendEvent,
   signEnvelope,
   subscriptionConfirmation,
   type Envelope,
@@ -43,6 +46,9 @@ vi.mock('@/lib/provider-events/store', () => ({
   providerEventStore: () => ({
     recordBounce: record('bounce'),
     recordComplaint: record('complaint'),
+    recordSend: record('send'),
+    recordDelivery: record('delivery'),
+    recordReject: record('reject'),
     recordIgnored: record('ignored'),
   }),
 }));
@@ -124,10 +130,25 @@ describe('authentic notifications', () => {
   });
 
   it('an unexpected event type is recorded as ignored, never acted on', async () => {
-    for (const eventType of ['Delivery', 'Send', 'Reject', 'Open', 'BrandNewType']) {
+    for (const eventType of ['DeliveryDelay', 'Rendering Failure', 'Open', 'Click', 'BrandNewType']) {
       expect((await send(notification({ eventType, mail: { messageId: 'm-1' } }, signer))).status).toBe(200);
     }
     expect(calls.map((c) => c.fn)).toEqual(['ignored', 'ignored', 'ignored', 'ignored', 'ignored']);
+  });
+
+  it('Send, Delivery and Reject each reach their own store function with the attempt number (0017)', async () => {
+    const tagged = { ...target, attemptNo: 1 };
+    for (const event of [sendEvent(tagged), deliveryEvent(tagged), rejectEvent(tagged)]) {
+      expect((await send(notification(event, signer))).status).toBe(200);
+    }
+    expect(calls.map((c) => c.fn)).toEqual(['send', 'delivery', 'reject']);
+    for (const call of calls) expect(call.input).toMatchObject({ attemptNo: 1, workspaceId: WS });
+  });
+
+  it('a Send with no destination is malformed: 400, nothing recorded', async () => {
+    const res = await send(notification({ eventType: 'Send', mail: { messageId: 'm-1' } }, signer));
+    expect(res.status).toBe(400);
+    expect(calls).toEqual([]);
   });
 
   it('never logs a recipient address', async () => {

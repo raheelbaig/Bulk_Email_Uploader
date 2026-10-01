@@ -85,6 +85,9 @@ export const AUDIT_ACTIONS = [
   // strengthened by a bounce or complaint, or an event applied without one.
   'suppression.auto',
   'provider_event.recorded',
+  // 0017: a Send/Delivery/Bounce/Complaint/Reject event confirmed an attempt the
+  // worker had not recorded (in flight, crashed, or held as uncertain).
+  'send.confirmed_by_provider',
   // reserved for later phases — named now, unused until then
   'policy.rate_changed',
   'policy.health_state_changed',

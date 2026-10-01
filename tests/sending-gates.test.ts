@@ -267,6 +267,17 @@ describe('the send path is closed by default', () => {
     expect(outboundProviderFor('live')).toBeNull();
   });
 
+  it('an SNS topic outside AWS_REGION (or AWS_ACCOUNT_ID) keeps live sending closed', async () => {
+    for (const extra of [
+      { AWS_SNS_TOPIC_ARN: 'arn:aws:sns:us-east-1:123456789012:email-uploader-ses-events' },
+      { AWS_ACCOUNT_ID: '210987654321' },
+    ]) {
+      const { outboundProviderFor, sendingConfig } = await withEnv({ ...fullLive, EMAIL_SENDING_MODE: 'live', ...extra });
+      expect(sendingConfig().live).toEqual({ allowed: false, unmet: ['event_pipeline'] });
+      expect(outboundProviderFor('live')).toBeNull();
+    }
+  });
+
   it('only a fully configured live deployment gets the SES provider', async () => {
     const { outboundProviderFor, sendingConfig } = await withEnv({ ...fullLive, EMAIL_SENDING_MODE: 'live' });
     expect(sendingConfig().live).toEqual({ allowed: true, unmet: [] });
@@ -389,7 +400,9 @@ describe('entry points', () => {
   });
 
   it('only the provider-event store calls the event functions', () => {
-    const callers = FILES.filter((f) => /events_record_(bounce|complaint|ignored)/.test(codeOf(f))).map(rel);
+    const callers = FILES.filter((f) =>
+      /events_record_(bounce|complaint|send|delivery|reject|ignored)|events_prune/.test(codeOf(f)),
+    ).map(rel);
     expect(callers).toEqual(['src/lib/provider-events/store.ts']);
   });
 

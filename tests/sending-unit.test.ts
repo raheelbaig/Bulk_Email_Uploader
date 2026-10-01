@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateLiveGate, type LiveGateInput } from '@/lib/sending/gate';
+import { evaluateLiveGate, eventPipelineConfigured, type LiveGateInput } from '@/lib/sending/gate';
 import { MAX_ATTEMPTS, nextAttemptAt } from '@/lib/sending/retry';
 import { encodeHeaderText, formatAddress } from '@/lib/sending/mime';
 import { composeMessage, type ComposeInput } from '@/lib/sending/compose';
@@ -64,6 +64,26 @@ describe('the live gate', () => {
       appUrl: 'http://localhost:3000',
     });
     expect(verdict.unmet).toHaveLength(8);
+  });
+});
+
+describe('the event pipeline requirement (SES publishes only to a topic in its own region)', () => {
+  const topic = 'arn:aws:sns:ap-south-1:123456789012:email-uploader-ses-events';
+
+  it('holds for a topic in AWS_REGION, with or without AWS_ACCOUNT_ID', () => {
+    expect(eventPipelineConfigured(topic, 'ap-south-1', undefined)).toBe(true);
+    expect(eventPipelineConfigured(topic, 'ap-south-1', '123456789012')).toBe(true);
+  });
+
+  it.each([
+    ['no topic', undefined, 'ap-south-1', undefined],
+    ['no region', topic, undefined, undefined],
+    ['a topic in another region', topic, 'eu-west-1', undefined],
+    ['a topic in another account', topic, 'ap-south-1', '210987654321'],
+    ['not an SNS ARN', 'arn:aws:sqs:ap-south-1:123456789012:queue', 'ap-south-1', undefined],
+    ['a malformed ARN', 'arn:aws:sns:ap-south-1:123456789012', 'ap-south-1', undefined],
+  ])('fails with %s', (_name, arn, region, account) => {
+    expect(eventPipelineConfigured(arn, region, account)).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import 'server-only';
 import { serverEnv } from '@/lib/env';
-import { evaluateLiveGate } from '../gate';
+import { evaluateLiveGate, eventPipelineConfigured } from '../gate';
 import { createDryRunProvider } from './dry-run';
 import { createSesOutboundProvider } from './ses';
 import { createSesSendClient } from './ses-send-client';
@@ -35,7 +35,7 @@ export function outboundProviderFor(executionMode: 'dry_run' | 'live'): Outbound
       env.AWS_ACCESS_KEY_ID !== undefined &&
       env.AWS_SECRET_ACCESS_KEY !== undefined,
     hasConfigurationSet: env.AWS_SES_CONFIGURATION_SET !== undefined,
-    hasEventPipeline: env.AWS_SNS_TOPIC_ARN !== undefined,
+    hasEventPipeline: eventPipelineConfigured(env.AWS_SNS_TOPIC_ARN, env.AWS_REGION, env.AWS_ACCOUNT_ID),
     hasUnsubscribeSecret: env.UNSUBSCRIBE_SECRET_V1 !== undefined,
     hasWorkerSecret: env.WORKER_HMAC_SECRET !== undefined,
     appUrl: env.NEXT_PUBLIC_APP_URL,

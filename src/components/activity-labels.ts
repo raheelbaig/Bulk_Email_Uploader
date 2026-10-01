@@ -59,6 +59,7 @@ export const ACTIVITY_LABEL: Record<AuditAction, string> = {
   'suppression.unsubscribed': 'Someone unsubscribed',
   'suppression.auto': 'Address blocked automatically',
   'provider_event.recorded': 'Delivery report received',
+  'send.confirmed_by_provider': 'Amazon SES confirmed a message was sent',
   'policy.rate_changed': 'Sending rate changed',
   'policy.health_state_changed': 'Sending health changed',
   'test_send.dispatched': 'Test email sent',

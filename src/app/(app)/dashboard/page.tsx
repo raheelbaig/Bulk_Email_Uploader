@@ -19,6 +19,7 @@ import { loadDashboard } from './load';
 import { PageHeader } from '@/components/page-header';
 import { SectionCard } from '@/components/section-card';
 import { StatCard } from '@/components/stat-card';
+import { SendHealthCard } from '@/components/send-health-card';
 import { Checklist, ProgressSummary, type ChecklistItem } from '@/components/checklist';
 import { CampaignStatusBadge } from '@/components/status-badge';
 import { activityLabel, relativeTime } from '@/components/activity-labels';
@@ -261,6 +262,8 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      <SendHealthCard health={data.health} />
 
       {stats.length > 0 && (
         <section aria-labelledby="overview-title" className="flex flex-col gap-4">

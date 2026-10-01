@@ -68,6 +68,27 @@ export function evaluateLiveGate(input: LiveGateInput): LiveGateVerdict {
 }
 
 /**
+ * Whether bounce and complaint events can actually reach this deployment.
+ *
+ * SES publishes a configuration set's events only to an SNS topic in its own
+ * region, so a topic in another region than AWS_REGION is a pipeline that
+ * would silently never fire. When AWS_ACCOUNT_ID is set, the topic must belong
+ * to that account too. This is a configuration check: it cannot prove the
+ * subscription is confirmed (the webhook logs that when it happens).
+ */
+export function eventPipelineConfigured(
+  topicArn: string | undefined,
+  region: string | undefined,
+  accountId: string | undefined,
+): boolean {
+  if (topicArn === undefined || region === undefined) return false;
+  const parts = topicArn.split(':');
+  if (parts.length !== 6 || parts[0] !== 'arn' || parts[2] !== 'sns') return false;
+  if (parts[3] !== region) return false;
+  return accountId === undefined || parts[4] === accountId;
+}
+
+/**
  * Unsubscribe links point at the app. Over plain HTTP a link in a real
  * recipient's inbox would be interceptable and, on most mail clients, flagged.
  */
@@ -85,7 +106,8 @@ export const LIVE_REQUIREMENT_MESSAGE: Record<LiveRequirement, string> = {
   production_environment: 'APP_ENVIRONMENT is not production, so this deployment never delivers real email.',
   provider_credentials: 'Amazon SES credentials and region are not configured.',
   configuration_set: 'AWS_SES_CONFIGURATION_SET is not configured, so SES would emit no delivery events.',
-  event_pipeline: 'AWS_SNS_TOPIC_ARN is not configured, so bounces and complaints would not be received.',
+  event_pipeline:
+    'AWS_SNS_TOPIC_ARN is not configured, or is not a topic in AWS_REGION (and AWS_ACCOUNT_ID, when set), so bounces and complaints would not be received.',
   unsubscribe_secret: 'UNSUBSCRIBE_SECRET_V1 is not configured, so messages could not carry a working unsubscribe link.',
   worker_secret: 'WORKER_HMAC_SECRET is not configured, so the scheduler cannot authenticate to the worker.',
   https_app_url: 'NEXT_PUBLIC_APP_URL is not a public https address, so unsubscribe links would not work for recipients.',

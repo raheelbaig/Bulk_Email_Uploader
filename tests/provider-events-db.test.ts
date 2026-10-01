@@ -2,8 +2,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createTestDb, expectRejected, type TestDb } from './helpers/db';
 import { seedContact, seedSuppression, testEligibilityReader } from './helpers/p1';
 import { seedLaunchableCampaign, jobsFor } from './helpers/p5';
-import { bounceEvent, complaintEvent, snsMessageId, type EventTarget } from './helpers/sns';
-import { applyProviderEvent, type ProviderEventStore } from '@/lib/provider-events/apply';
+import {
+  bounceEvent,
+  complaintEvent,
+  deliveryEvent,
+  rejectEvent,
+  sendEvent,
+  snsMessageId,
+  type EventTarget,
+} from './helpers/sns';
+import { applyProviderEvent, type Correlated, type ProviderEventStore } from '@/lib/provider-events/apply';
 import { parseSesEvent } from '@/lib/provider-events/parse';
 import { checkEligibility } from '@/lib/eligibility';
 
@@ -27,21 +35,44 @@ afterAll(async () => {
   await db?.close();
 });
 
+/** The eight leading parameters every correlated event function takes, in order. */
+function correlation(i: Correlated): unknown[] {
+  return [i.snsMessageId, i.snsTimestamp, i.occurredAt, i.providerMessageId, i.workspaceId, i.jobId, i.attemptNo, i.recipients];
+}
+
 function testStore(): ProviderEventStore {
   const call = async (sql: string, params: unknown[]) =>
     db.asServiceRole(async (as) => (await as.raw<{ outcome: string }>(sql, params)).rows[0]?.outcome);
   return {
     async recordBounce(i) {
       return (await call(
-        `select events_record_bounce($1, $2, $3, $4, $5, $6, $7::text[], $8, $9) as outcome`,
-        [i.snsMessageId, i.snsTimestamp, i.occurredAt, i.providerMessageId, i.workspaceId, i.jobId, i.recipients, i.bounceType, i.bounceSubType],
+        `select events_record_bounce($1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10) as outcome`,
+        [...correlation(i), i.bounceType, i.bounceSubType],
       )) as 'applied' | 'duplicate' | 'unmatched';
     },
     async recordComplaint(i) {
       return (await call(
-        `select events_record_complaint($1, $2, $3, $4, $5, $6, $7::text[], $8) as outcome`,
-        [i.snsMessageId, i.snsTimestamp, i.occurredAt, i.providerMessageId, i.workspaceId, i.jobId, i.recipients, i.feedbackType],
+        `select events_record_complaint($1, $2, $3, $4, $5, $6, $7, $8::text[], $9) as outcome`,
+        [...correlation(i), i.feedbackType],
       )) as 'applied' | 'duplicate' | 'unmatched';
+    },
+    async recordSend(i) {
+      return (await call(`select events_record_send($1, $2, $3, $4, $5, $6, $7, $8::text[]) as outcome`, correlation(i))) as
+        | 'applied'
+        | 'duplicate'
+        | 'unmatched';
+    },
+    async recordDelivery(i) {
+      return (await call(
+        `select events_record_delivery($1, $2, $3, $4, $5, $6, $7, $8::text[]) as outcome`,
+        correlation(i),
+      )) as 'applied' | 'duplicate' | 'unmatched';
+    },
+    async recordReject(i) {
+      return (await call(`select events_record_reject($1, $2, $3, $4, $5, $6, $7, $8::text[], $9) as outcome`, [
+        ...correlation(i),
+        i.reason,
+      ])) as 'applied' | 'duplicate' | 'unmatched';
     },
     async recordIgnored(i) {
       return (await call(`select events_record_ignored($1, $2, $3, $4) as outcome`, [
@@ -109,7 +140,7 @@ async function sentCampaign(
     jobId: j.id,
     email: j.to_email,
     messageId: j.provider_message_id ?? '',
-    target: { messageId: j.provider_message_id ?? '', workspaceId, jobId: j.id, recipients: [j.to_email] },
+    target: { messageId: j.provider_message_id ?? '', workspaceId, jobId: j.id, attemptNo: 1, recipients: [j.to_email] },
   }));
 }
 
@@ -527,7 +558,7 @@ describe('failure and rollback', () => {
       const snsId = snsMessageId();
       await expectRejected(() =>
         db.asServiceRole((as) =>
-          as.raw(`select events_record_bounce($1, now(), now(), $2, $3, $4, array[$5]::text[], $6, $7)`, [
+          as.raw(`select events_record_bounce($1, now(), now(), $2, $3, $4, null, array[$5]::text[], $6, $7)`, [
             snsId,
             job!.messageId,
             workspaceId,
@@ -545,12 +576,12 @@ describe('failure and rollback', () => {
 
   it('other event types are recorded as ignored, once', async () => {
     const snsId = snsMessageId();
-    const parsed = parseSesEvent(JSON.stringify({ eventType: 'Delivery', mail: { messageId: 'delivered-1' } }));
+    const parsed = parseSesEvent(JSON.stringify({ eventType: 'DeliveryDelay', mail: { messageId: 'delayed-1' } }));
     if (!parsed.ok) throw new Error('fixture');
     const note = { snsMessageId: snsId, snsTimestamp: new Date().toISOString() };
     expect(await applyProviderEvent(testStore(), note, parsed.event)).toBe('ignored');
     expect(await applyProviderEvent(testStore(), note, parsed.event)).toBe('duplicate');
-    expect(await eventRow(snsId)).toMatchObject([{ outcome: 'ignored', event_type: 'delivery', workspace_id: null }]);
+    expect(await eventRow(snsId)).toMatchObject([{ outcome: 'ignored', event_type: 'delivery_delay', workspace_id: null }]);
   });
 });
 
@@ -570,15 +601,27 @@ describe('who can touch provider events and suppressions', () => {
           as.raw(`insert into provider_events (sns_message_id, event_type, sns_timestamp, outcome) values ('x', 'bounce', now(), 'ignored')`),
         ),
       );
-      await expectRejected(() =>
+      // The signatures are exact, so a refusal here is the privilege, not a
+      // "function does not exist" that would pass for the wrong reason.
+      const forged = await expectRejected(() =>
         run((as) =>
-          as.raw(`select events_record_complaint('forged', now(), now(), $1, $2, $3, array['a@example.com'], 'abuse')`, [
+          as.raw(`select events_record_complaint('forged', now(), now(), $1, $2, $3, 1, array['a@example.com'], 'abuse')`, [
             job!.messageId,
             owner.workspaceId,
             job!.jobId,
           ]),
         ),
       );
+      expect(forged.message).toMatch(/permission denied/);
+      for (const fn of [
+        `events_record_send('forged', now(), now(), 'm', null, null, null, array['a@example.com'])`,
+        `events_record_delivery('forged', now(), now(), 'm', null, null, null, array['a@example.com'])`,
+        `events_record_reject('forged', now(), now(), 'm', null, null, null, array['a@example.com'], null)`,
+        `events_prune(30, 10)`,
+      ]) {
+        const refused = await expectRejected(() => run((as) => as.raw(`select ${fn}`)));
+        expect(refused.message).toMatch(/permission denied/);
+      }
       await expectRejected(() => run((as) => as.raw(`select events_record_ignored('forged', now(), 'bounce', null)`)));
       await expectRejected(() =>
         run((as) =>
@@ -637,5 +680,425 @@ describe('who can touch provider events and suppressions', () => {
       ),
     );
     expect((await suppressionFor(owner.workspaceId, 'guarded@example.com'))[0]?.reason).toBe('complaint');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 0017 — Send / Delivery / Reject, reconciliation, sending health, retention
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface InFlightJob extends SentJob {
+  attemptId: string;
+}
+
+/**
+ * A live campaign whose jobs are claimed and have an attempt committed, but
+ * whose provider answer was never recorded — the worker is mid-call, or died
+ * there (ADR-0001 §3.1, "Attempt row dispatched").
+ */
+async function inFlightCampaign(workspaceId: string, recipients = 2): Promise<InFlightJob[]> {
+  const c = await seedLaunchableCampaign(db, workspaceId, { approvedMode: 'live', recipients });
+  const out: InFlightJob[] = [];
+  await db.asServiceRole(async (as) => {
+    await as.raw(`select sending_promote_campaign($1, $2, 'live')`, [workspaceId, c.campaignId]);
+    await as.raw(`select sending_materialize_campaign($1, $2)`, [workspaceId, c.campaignId]);
+    const claimed = await as.raw<{ id: string; to_email: string }>(
+      `select id, to_email from sending_claim_jobs($1, $2, 100, 0)`,
+      [workspaceId, c.campaignId],
+    );
+    for (const job of claimed.rows) {
+      const attempt = await as.raw<{ attempt_id: string }>(`select attempt_id from sending_begin_attempt($1, $2, 'live')`, [
+        workspaceId,
+        job.id,
+      ]);
+      seq += 1;
+      const messageId = `0102018f${String(seq).padStart(8, '0')}-inflight-000000`;
+      out.push({
+        workspaceId,
+        campaignId: c.campaignId,
+        jobId: job.id,
+        email: job.to_email,
+        messageId,
+        attemptId: attempt.rows[0]?.attempt_id ?? '',
+        target: { messageId, workspaceId, jobId: job.id, attemptNo: 1, recipients: [job.to_email] },
+      });
+    }
+  });
+  return out;
+}
+
+/** What the reconciler does after its grace window: attempt unknown, job send_uncertain. */
+async function makeUncertain(job: InFlightJob): Promise<void> {
+  await db.asServiceRole(async (as) => {
+    await as.raw(`update send_attempts set state = 'unknown', resolved_at = now() where id = $1`, [job.attemptId]);
+    await as.raw(
+      `update email_jobs set status = 'send_uncertain', claimed_at = null, last_error_class = 'uncertain', last_error_code = 'outcome_unknown' where id = $1`,
+      [job.jobId],
+    );
+  });
+}
+
+async function attemptRow(attemptId: string) {
+  return (
+    await db.raw<{ state: string; provider_message_id: string | null }>(
+      `select state::text as state, provider_message_id from send_attempts where id = $1`,
+      [attemptId],
+    )
+  ).rows[0];
+}
+
+async function allCounters(campaignId: string) {
+  return (
+    await db.raw<{ n_sent: number; n_delivered: number; n_bounced: number; n_complained: number; n_failed: number }>(
+      `select n_sent, n_delivered, n_bounced, n_complained, n_failed from campaigns where id = $1`,
+      [campaignId],
+    )
+  ).rows[0];
+}
+
+async function campaignState(campaignId: string) {
+  return (
+    await db.raw<{ status: string; pause_reason: string | null }>(
+      `select status::text as status, pause_reason from campaigns where id = $1`,
+      [campaignId],
+    )
+  ).rows[0];
+}
+
+async function finish(workspaceId: string, campaignId: string): Promise<string | null | undefined> {
+  const res = await db.asServiceRole((as) =>
+    as.raw<{ s: string | null }>(`select sending_finish_campaign($1, $2) as s`, [workspaceId, campaignId]),
+  );
+  return res.rows[0]?.s;
+}
+
+describe('reconciliation: a provider event confirms an attempt the worker did not record (ADR-0001 §3.2)', () => {
+  it('a Send event for an in-flight attempt marks it accepted and the job sent, once; the worker record that follows is a no-op', async () => {
+    const { workspaceId } = await db.createUser('recon-inflight@example.test');
+    const [job] = await inFlightCampaign(workspaceId, 1);
+    const snsId = snsMessageId();
+
+    expect(await deliver(sendEvent(job!.target), snsId)).toBe('applied');
+
+    expect(await attemptRow(job!.attemptId)).toEqual({ state: 'accepted', provider_message_id: job!.messageId });
+    expect(await jobStatus(job!.jobId)).toBe('sent');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 1 });
+    expect(await eventRow(snsId)).toMatchObject([
+      { outcome: 'applied', event_type: 'send', job_id: job!.jobId, detail: { reconcile: 'resolved' } },
+    ]);
+    expect((await auditFor(job!.jobId)).map((a) => [a.action, a.actor_type])).toEqual([
+      ['send.confirmed_by_provider', 'provider'],
+    ]);
+
+    // The worker's own answer arrives afterwards: nothing moves twice.
+    const late = await db.asServiceRole((as) =>
+      as.raw<{ ok: boolean }>(`select sending_record_accepted($1, $2, $3) as ok`, [
+        workspaceId,
+        job!.attemptId,
+        job!.messageId,
+      ]),
+    );
+    expect(late.rows[0]?.ok).toBe(false);
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 1 });
+
+    // A redelivered Send is a duplicate; a fresh Send for the same message is 'already'.
+    expect(await deliver(sendEvent(job!.target), snsId)).toBe('duplicate');
+    const again = snsMessageId();
+    expect(await deliver(sendEvent(job!.target), again)).toBe('applied');
+    expect(await eventRow(again)).toMatchObject([{ detail: { reconcile: 'already' } }]);
+    expect(await auditFor(job!.jobId)).toHaveLength(1);
+  });
+
+  it('the worker recording first leaves the Send event nothing to do', async () => {
+    const { workspaceId } = await db.createUser('recon-worker-first@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    const snsId = snsMessageId();
+    expect(await deliver(sendEvent(job!.target), snsId)).toBe('applied');
+    expect(await eventRow(snsId)).toMatchObject([{ detail: { reconcile: 'already' } }]);
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 2 });
+    expect(await auditFor(job!.jobId)).toEqual([]);
+  });
+
+  it('a Send event resolves a job held as send_uncertain, and the campaign can then finish', async () => {
+    const { workspaceId } = await db.createUser('recon-uncertain@example.test');
+    const [job] = await inFlightCampaign(workspaceId, 1);
+    await makeUncertain(job!);
+    expect(await finish(workspaceId, job!.campaignId)).toBeNull();
+
+    expect(await deliver(sendEvent(job!.target))).toBe('applied');
+
+    expect(await attemptRow(job!.attemptId)).toMatchObject({ state: 'accepted' });
+    expect(await jobStatus(job!.jobId)).toBe('sent');
+    expect(await finish(workspaceId, job!.campaignId)).toBe('completed');
+  });
+
+  it('a bounce that overtakes the worker commit still suppresses (0016 recorded it unmatched)', async () => {
+    const { workspaceId } = await db.createUser('recon-race@example.test');
+    const [job] = await inFlightCampaign(workspaceId, 1);
+
+    expect(await deliver(bounceEvent(job!.target))).toBe('applied');
+
+    expect(await suppressionFor(workspaceId, job!.email)).toMatchObject([{ reason: 'hard_bounce', source: 'ses_event' }]);
+    expect(await jobStatus(job!.jobId)).toBe('bounced');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 1, n_bounced: 1 });
+    expect((await auditFor(job!.jobId)).map((a) => a.action)).toEqual(['send.confirmed_by_provider', 'suppression.auto']);
+  });
+
+  it('a complaint that overtakes the worker commit still suppresses', async () => {
+    const { workspaceId } = await db.createUser('recon-race-complaint@example.test');
+    const [job] = await inFlightCampaign(workspaceId, 1);
+    expect(await deliver(complaintEvent(job!.target))).toBe('applied');
+    expect(await suppressionFor(workspaceId, job!.email)).toMatchObject([{ reason: 'complaint' }]);
+    expect(await jobStatus(job!.jobId)).toBe('complained');
+  });
+
+  it.each([
+    ['the recipient is not the job’s', (t: EventTarget) => ({ ...t, recipients: ['someone-else@example.com'] }), 'recipient_mismatch'],
+    ['the attempt number is not the job’s', (t: EventTarget) => ({ ...t, attemptNo: 2 }), 'no_attempt'],
+    ['there is no attempt tag', (t: EventTarget) => ({ ...t, attemptNo: null }), 'no_tags'],
+    ['the job id is unknown', (t: EventTarget) => ({ ...t, jobId: '00000000-0000-4000-8000-000000000000' }), 'no_attempt'],
+  ])('nothing is confirmed when %s', async (_name, forge, reason) => {
+    seq += 1;
+    const { workspaceId } = await db.createUser(`recon-forged-${seq}@example.test`);
+    const [job] = await inFlightCampaign(workspaceId, 1);
+    const snsId = snsMessageId();
+
+    expect(await deliver(sendEvent(forge(job!.target)), snsId)).toBe('unmatched');
+
+    expect(await attemptRow(job!.attemptId)).toEqual({ state: 'dispatched', provider_message_id: null });
+    expect(await jobStatus(job!.jobId)).toBe('claimed');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 0 });
+    expect(await eventRow(snsId)).toMatchObject([
+      { outcome: 'unmatched', job_id: null, detail: { reconcile: reason, unmatched: reason } },
+    ]);
+    expect(await auditFor(job!.jobId)).toEqual([]);
+  });
+
+  it('tags naming another workspace confirm nothing in either', async () => {
+    const a = await db.createUser('recon-ws-a@example.test');
+    const b = await db.createUser('recon-ws-b@example.test');
+    const [job] = await inFlightCampaign(a.workspaceId, 1);
+    expect(await deliver(sendEvent({ ...job!.target, workspaceId: b.workspaceId }))).toBe('unmatched');
+    expect(await attemptRow(job!.attemptId)).toMatchObject({ state: 'dispatched' });
+  });
+
+  it('a dry-run attempt is never confirmed — it never reached SES', async () => {
+    const { workspaceId } = await db.createUser('recon-dry@example.test');
+    const c = await seedLaunchableCampaign(db, workspaceId, { approvedMode: 'dry_run', recipients: 1 });
+    const job = await db.asServiceRole(async (as) => {
+      await as.raw(`select sending_promote_campaign($1, $2, 'dry_run')`, [workspaceId, c.campaignId]);
+      await as.raw(`select sending_materialize_campaign($1, $2)`, [workspaceId, c.campaignId]);
+      const claimed = await as.raw<{ id: string; to_email: string }>(`select id, to_email from sending_claim_jobs($1, $2, 1, 0)`, [
+        workspaceId,
+        c.campaignId,
+      ]);
+      await as.raw(`select sending_begin_attempt($1, $2, 'dry_run')`, [workspaceId, claimed.rows[0]?.id]);
+      return claimed.rows[0];
+    });
+    const snsId = snsMessageId();
+    expect(
+      await deliver(sendEvent({ messageId: 'dry-1', workspaceId, jobId: job!.id, attemptNo: 1, recipients: [job!.to_email] }), snsId),
+    ).toBe('unmatched');
+    expect(await eventRow(snsId)).toMatchObject([{ detail: { reconcile: 'not_live' } }]);
+    expect(await jobStatus(job!.id)).toBe('claimed');
+  });
+
+  it('a job a person already decided about is left alone', async () => {
+    const { workspaceId } = await db.createUser('recon-left@example.test');
+    const [left, again] = await inFlightCampaign(workspaceId, 2);
+    await makeUncertain(left!);
+    await makeUncertain(again!);
+    await db.asServiceRole(async (as) => {
+      await as.raw(`select sending_resolve_uncertain($1, $2, 'leave')`, [workspaceId, left!.jobId]);
+      await as.raw(`select sending_resolve_uncertain($1, $2, 'redispatch')`, [workspaceId, again!.jobId]);
+    });
+
+    expect(await deliver(sendEvent(left!.target))).toBe('unmatched');
+    expect(await jobStatus(left!.jobId)).toBe('failed');
+
+    // "Send again": pending now, and once re-claimed attempt 2 owns the job.
+    expect(await deliver(sendEvent(again!.target))).toBe('unmatched');
+    expect(await jobStatus(again!.jobId)).toBe('pending');
+    await db.asServiceRole(async (as) => {
+      await as.raw(`select * from sending_claim_jobs($1, $2, 10, 0)`, [workspaceId, again!.campaignId]);
+      await as.raw(`select sending_begin_attempt($1, $2, 'live')`, [workspaceId, again!.jobId]);
+    });
+    const snsId = snsMessageId();
+    expect(await deliver(sendEvent(again!.target), snsId)).toBe('unmatched');
+    expect(await eventRow(snsId)).toMatchObject([{ detail: { reconcile: 'superseded' } }]);
+    expect(await jobStatus(again!.jobId)).toBe('claimed');
+    expect(await attemptRow(again!.attemptId)).toMatchObject({ state: 'unknown' });
+  });
+});
+
+describe('delivery events', () => {
+  it('Delivery moves sent → delivered and counts once, however often it arrives', async () => {
+    const { workspaceId } = await db.createUser('delivery-owner@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    const snsId = snsMessageId();
+
+    expect(await deliver(deliveryEvent(job!.target), snsId)).toBe('applied');
+    expect(await deliver(deliveryEvent(job!.target), snsId)).toBe('duplicate');
+    expect(await deliver(deliveryEvent(job!.target))).toBe('applied');
+
+    expect(await jobStatus(job!.jobId)).toBe('delivered');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 2, n_delivered: 1 });
+    expect(await suppressionFor(workspaceId, job!.email)).toEqual([]);
+    // One row per message would bury the audit log; the event row is the record.
+    expect(await auditFor(job!.jobId)).toEqual([]);
+  });
+
+  it('a delivery report after a bounce leaves the job bounced (jobs never move backwards)', async () => {
+    const { workspaceId } = await db.createUser('delivery-after-bounce@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    await deliver(bounceEvent(job!.target));
+    expect(await deliver(deliveryEvent(job!.target))).toBe('applied');
+    expect(await jobStatus(job!.jobId)).toBe('bounced');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_delivered: 0, n_bounced: 1 });
+  });
+
+  it('a delivered job can still be complained about', async () => {
+    const { workspaceId } = await db.createUser('delivery-then-complaint@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    await deliver(deliveryEvent(job!.target));
+    expect(await deliver(complaintEvent(job!.target))).toBe('applied');
+    expect(await jobStatus(job!.jobId)).toBe('complained');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_delivered: 1, n_complained: 1 });
+  });
+
+  it('a delivery report for a forged message id is unmatched', async () => {
+    const { workspaceId } = await db.createUser('delivery-forged@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    expect(await deliver(deliveryEvent({ ...job!.target, messageId: 'not-the-real-id', attemptNo: null }))).toBe('unmatched');
+    expect(await jobStatus(job!.jobId)).toBe('sent');
+  });
+});
+
+describe('reject events', () => {
+  it('Reject fails the job, moves it out of the sent count, suppresses nobody, and is audited', async () => {
+    const { workspaceId } = await db.createUser('reject-owner@example.test');
+    const [job] = await sentCampaign(workspaceId);
+    const snsId = snsMessageId();
+
+    expect(await deliver(rejectEvent(job!.target, 'Bad content'), snsId)).toBe('applied');
+    expect(await deliver(rejectEvent(job!.target, 'Bad content'), snsId)).toBe('duplicate');
+
+    expect(await jobStatus(job!.jobId)).toBe('failed');
+    expect(await allCounters(job!.campaignId)).toMatchObject({ n_sent: 1, n_failed: 1 });
+    expect(await suppressionFor(workspaceId, job!.email)).toEqual([]);
+    const audit = await auditFor(job!.jobId);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      action: 'provider_event.recorded',
+      metadata: { eventType: 'reject', jobTransition: 'sent->failed', rejectReason: 'Bad content' },
+    });
+  });
+
+  it('a reject reason that is not a plain phrase is dropped by the parser and refused by the function', async () => {
+    const parsed = parseSesEvent(
+      JSON.stringify(rejectEvent({ messageId: 'm-1', recipients: ['a@example.com'] }, "x'; drop table jobs; --")),
+    );
+    expect(parsed).toMatchObject({ ok: true, event: { kind: 'reject', reason: null } });
+    const err = await expectRejected(() =>
+      db.asServiceRole((as) =>
+        as.raw(`select events_record_reject('r-1', now(), now(), 'm', null, null, null, array['a@example.com'], $1)`, [
+          "x'; drop",
+        ]),
+      ),
+    );
+    expect(err.message).toMatch(/malformed reject reason/);
+  });
+});
+
+describe('sending health and auto-pause', () => {
+  /** A live campaign of `n` messages, all accepted, still `sending`. */
+  async function bigCampaign(email: string, n: number) {
+    const { userId, workspaceId } = await db.createUser(email);
+    const slug = email.replace(/[^a-z0-9]/g, '');
+    const jobs = await sentCampaign(workspaceId, {
+      emails: Array.from({ length: n }, (_, i) => `r${i}-${slug}@recipient.example`),
+    });
+    return { userId, workspaceId, jobs };
+  }
+
+  it('below 100 messages there is no verdict: bounces suppress but nothing pauses', async () => {
+    const { workspaceId, jobs } = await bigCampaign('health-small@example.test', 10);
+    for (const job of jobs.slice(0, 5)) await deliver(bounceEvent(job.target));
+    expect(await campaignState(jobs[0]!.campaignId)).toEqual({ status: 'sending', pause_reason: null });
+    const health = await db.asServiceRole((as) =>
+      as.raw<{ sample: number; bounced: number }>(`select * from workspace_send_health($1)`, [workspaceId]),
+    );
+    expect(health.rows[0]).toMatchObject({ sample: 10, bounced: 5 });
+  });
+
+  it('the bounce that reaches 4% pauses every sending campaign, in the same transaction, with an audit row', async () => {
+    const { workspaceId, jobs } = await bigCampaign('health-bounce@example.test', 100);
+    for (const job of jobs.slice(0, 3)) await deliver(bounceEvent(job.target));
+    expect(await campaignState(jobs[0]!.campaignId)).toMatchObject({ status: 'sending' });
+
+    await deliver(bounceEvent(jobs[3]!.target));
+    expect(await campaignState(jobs[0]!.campaignId)).toEqual({ status: 'paused', pause_reason: 'bounce_rate_high' });
+
+    const audit = await db.raw<{ action: string; metadata: Record<string, unknown> }>(
+      `select action, metadata from audit_logs where workspace_id = $1 and action = 'policy.auto_paused'`,
+      [workspaceId],
+    );
+    expect(audit.rows).toEqual([
+      {
+        action: 'policy.auto_paused',
+        metadata: { reason: 'bounce_rate_high', campaignsPaused: 1, sample: 100, bounced: 4, complained: 0 },
+      },
+    ]);
+  });
+
+  it('one complaint in a few hundred messages pauses (SES reviews at 0.1%)', async () => {
+    const { jobs } = await bigCampaign('health-complaint@example.test', 100);
+    await deliver(complaintEvent(jobs[0]!.target));
+    expect(await campaignState(jobs[0]!.campaignId)).toEqual({ status: 'paused', pause_reason: 'complaint_rate_high' });
+  });
+
+  it('transient bounces do not count', async () => {
+    const { jobs } = await bigCampaign('health-transient@example.test', 100);
+    for (const job of jobs.slice(0, 10)) {
+      await deliver(bounceEvent(job.target, { bounceType: 'Transient', bounceSubType: 'MailboxFull' }));
+    }
+    expect(await campaignState(jobs[0]!.campaignId)).toMatchObject({ status: 'sending' });
+  });
+
+  it('members read their own workspace health and nobody else’s', async () => {
+    const owner = await db.createUser('health-rls@example.test');
+    const other = await db.createUser('health-rls-other@example.test');
+    const [job] = await sentCampaign(owner.workspaceId);
+    await deliver(bounceEvent(job!.target));
+    const mine = await db.asUser(owner.userId, (as) =>
+      as.raw<{ sample: number; bounced: number }>(`select * from workspace_send_health($1)`, [owner.workspaceId]),
+    );
+    expect(mine.rows[0]).toMatchObject({ sample: 2, bounced: 1 });
+    const theirs = await db.asUser(other.userId, (as) =>
+      as.raw<{ sample: number }>(`select * from workspace_send_health($1)`, [owner.workspaceId]),
+    );
+    expect(theirs.rows[0]).toMatchObject({ sample: 0 });
+    const anon = await expectRejected(() =>
+      db.asAnon((as) => as.raw(`select * from workspace_send_health($1)`, [owner.workspaceId])),
+    );
+    expect(anon.message).toMatch(/permission denied/);
+  });
+});
+
+describe('provider event retention', () => {
+  it('events_prune removes only rows older than the window, never under 30 days', async () => {
+    const old = snsMessageId();
+    const recent = snsMessageId();
+    await db.raw(
+      `insert into provider_events (sns_message_id, event_type, sns_timestamp, received_at, outcome)
+       values ($1, 'delivery', now(), now() - interval '120 days', 'ignored'),
+              ($2, 'delivery', now(), now() - interval '20 days', 'ignored')`,
+      [old, recent],
+    );
+    // Asking for 1 day is clamped to 30: the 20-day-old row stays.
+    const pruned = await db.asServiceRole((as) => as.raw<{ n: number }>(`select events_prune(1) as n`));
+    expect(pruned.rows[0]?.n).toBeGreaterThanOrEqual(1);
+    expect(await eventRow(old)).toEqual([]);
+    expect(await eventRow(recent)).toHaveLength(1);
   });
 });

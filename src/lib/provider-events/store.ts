@@ -1,17 +1,17 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { unscopedServiceClient } from '@/lib/db/service';
-import type { ProviderEventStore } from './apply';
+import type { Correlated, ProviderEventStore } from './apply';
 
 /**
- * The production provider-event store: one `events_record_*` call (0016) per
- * event, nothing else.
+ * The production provider-event store: one `events_record_*` call (0016, 0017)
+ * per event, nothing else.
  *
  * Unscoped by necessity — this is the case `unscopedServiceClient` documents:
  * an inbound event does not yet have a trusted workspace. The workspace it
  * names in its tags is handed to the database as a claim to check, not as a
- * scope to trust; the function matches it against the job and the provider
- * message id before touching anything.
+ * scope to trust; the function matches it against the job, the attempt and the
+ * provider message id before touching anything.
  *
  * A reply that is not one of the function's documented outcomes throws, so a
  * schema drift fails loudly (and SNS retries) instead of being reported as a
@@ -31,40 +31,40 @@ export function providerEventStore(): ProviderEventStore {
 
   const matched = ['applied', 'duplicate', 'unmatched'] as const;
 
+  const correlation = (input: Correlated) => ({
+    p_sns_message_id: input.snsMessageId,
+    p_sns_timestamp: input.snsTimestamp,
+    p_occurred_at: input.occurredAt,
+    p_message_id: input.providerMessageId,
+    p_workspace_id: input.workspaceId,
+    p_job_id: input.jobId,
+    p_attempt_no: input.attemptNo,
+    p_recipients: input.recipients,
+  });
+
   return {
     recordBounce(input) {
       return call(
         'events_record_bounce',
-        {
-          p_sns_message_id: input.snsMessageId,
-          p_sns_timestamp: input.snsTimestamp,
-          p_occurred_at: input.occurredAt,
-          p_message_id: input.providerMessageId,
-          p_workspace_id: input.workspaceId,
-          p_job_id: input.jobId,
-          p_recipients: input.recipients,
-          p_bounce_type: input.bounceType,
-          p_bounce_subtype: input.bounceSubType,
-        },
+        { ...correlation(input), p_bounce_type: input.bounceType, p_bounce_subtype: input.bounceSubType },
         matched,
       );
     },
 
     recordComplaint(input) {
-      return call(
-        'events_record_complaint',
-        {
-          p_sns_message_id: input.snsMessageId,
-          p_sns_timestamp: input.snsTimestamp,
-          p_occurred_at: input.occurredAt,
-          p_message_id: input.providerMessageId,
-          p_workspace_id: input.workspaceId,
-          p_job_id: input.jobId,
-          p_recipients: input.recipients,
-          p_feedback_type: input.feedbackType,
-        },
-        matched,
-      );
+      return call('events_record_complaint', { ...correlation(input), p_feedback_type: input.feedbackType }, matched);
+    },
+
+    recordSend(input) {
+      return call('events_record_send', correlation(input), matched);
+    },
+
+    recordDelivery(input) {
+      return call('events_record_delivery', correlation(input), matched);
+    },
+
+    recordReject(input) {
+      return call('events_record_reject', { ...correlation(input), p_reason: input.reason }, matched);
     },
 
     recordIgnored(input) {

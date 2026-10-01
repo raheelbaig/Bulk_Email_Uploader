@@ -163,6 +163,8 @@ export interface EventTarget {
   messageId: string;
   workspaceId?: string | null;
   jobId?: string | null;
+  /** The worker's `attempt_no` tag (0017 reconciliation). */
+  attemptNo?: number | null;
   recipients: string[];
 }
 
@@ -170,6 +172,7 @@ function mail(target: EventTarget) {
   const tags: Record<string, string[]> = { 'ses:configuration-set': ['app-primary'] };
   if (target.workspaceId !== null && target.workspaceId !== undefined) tags['workspace_id'] = [target.workspaceId];
   if (target.jobId !== null && target.jobId !== undefined) tags['job_id'] = [target.jobId];
+  if (target.attemptNo !== null && target.attemptNo !== undefined) tags['attempt_no'] = [String(target.attemptNo)];
   return {
     timestamp: new Date().toISOString(),
     source: 'news@send.example.com',
@@ -212,4 +215,26 @@ export function complaintEvent(target: EventTarget, feedbackType = 'abuse'): Rec
     },
     mail: mail(target),
   };
+}
+
+export function sendEvent(target: EventTarget): Record<string, unknown> {
+  return { eventType: 'Send', send: {}, mail: mail(target) };
+}
+
+export function deliveryEvent(target: EventTarget): Record<string, unknown> {
+  return {
+    eventType: 'Delivery',
+    delivery: {
+      timestamp: new Date().toISOString(),
+      processingTimeMillis: 812,
+      recipients: target.recipients,
+      smtpResponse: '250 2.6.0 Message received',
+      reportingMTA: 'a8-30.smtp-out.amazonses.com',
+    },
+    mail: mail(target),
+  };
+}
+
+export function rejectEvent(target: EventTarget, reason = 'Bad content'): Record<string, unknown> {
+  return { eventType: 'Reject', reject: { reason }, mail: mail(target) };
 }

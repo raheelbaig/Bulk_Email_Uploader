@@ -13,8 +13,9 @@ import {
 import { providerEventStore } from '@/lib/provider-events/store';
 
 /**
- * POST /api/webhooks/ses — SES bounce and complaint events over SNS (P6,
- * ADR-0005 §1.2, ARCHITECTURE §16).
+ * POST /api/webhooks/ses — SES events over SNS (P6, ADR-0005 §1.2, ADR-0006,
+ * ARCHITECTURE §16): Bounce and Complaint suppress; Send confirms an attempt;
+ * Delivery and Reject settle the job; everything else is recorded only.
  *
  *   1. Size cap (256 KB), before anything is parsed.
  *   2. The SNS envelope only: shape, and the message-type header.
@@ -23,7 +24,8 @@ import { providerEventStore } from '@/lib/provider-events/store';
  *      With no topic configured, every request is refused.
  *   4. Only then the SES event inside it.
  *   5. One database function call per event: record (idempotent on the SNS
- *      MessageId), match against the job, suppress, audit — one transaction.
+ *      MessageId), reconcile the attempt, match against the job, suppress,
+ *      audit, and pause on a health breach — one transaction.
  *
  * Statuses, always with an empty body:
  *   200  recorded — applied, duplicate, unmatched or ignored. SNS stops.
