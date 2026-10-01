@@ -4,3 +4,12 @@
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+
+# Next pins postcss 8.4.31, which has published advisories (GHSA-qx2v-qp2m-jg93,
+# GHSA-r28c-9q8g-f849 and related). It only processes this repository's own CSS
+# at build time, but the patched line is a drop-in replacement.
+overrides:
+  next>postcss: ^8.5.23
+  # Lint tooling only (minimatch): ReDoS advisories fixed within each major.
+  brace-expansion@<2: ^1.1.21
+  brace-expansion@>=4 <6: ^5.0.12
