@@ -24,8 +24,21 @@ Every step below is done by the operator. The application never creates cloud re
 
 ## 2. Vercel project
 
-1. **Import** `github.com/raheelbaig/Bulk_Email_Uploader` as a new project. Vercel reads `vercel.json`, so leave the framework, build and install commands at their defaults.
-2. **Settings → Environment Variables.** Scope every variable to **Production** only.
+> **Set every required variable before the first production build.** Do not import the project and let it build first, then add the variables. With `APP_ENVIRONMENT=production`, the production checks run **during the build** as well as at runtime: `/signup` is prerendered, and its layout reads the server environment. So a build fails with `Invalid server environment` if any of these is missing or wrong:
+>
+> - `NEXT_PUBLIC_APP_URL`: the final `https://<app-host>`, not http, localhost or a loopback address;
+> - `NEXT_PUBLIC_SUPABASE_URL`: https;
+> - `WORKER_HMAC_SECRET` and `UNSUBSCRIBE_SECRET_V1`: the two **newly generated** secrets from §1.2;
+> - `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
+>
+> `NEXT_PUBLIC_*` values are compiled into the build, so changing one later needs a redeploy. The AWS variables are optional at this stage. Without them the app builds and runs, and the sender pages report that the provider is not configured.
+>
+> If Vercel's import screen starts a build before you can add variables, let that build fail or cancel it. Add the variables, then use **Redeploy**.
+
+1. **Import** `github.com/raheelbaig/Bulk_Email_Uploader` as a new project. Vercel reads `vercel.json`, so leave the framework, build and install commands at their defaults. `vercel.json` pins the toolchain CI validates:
+   - **pnpm 10.34.6.** The install and build commands run it through `npx`. A v9.0 lockfile alone may make Vercel choose pnpm 9, which fails on this repository's `pnpm-workspace.yaml` (`packages field missing or empty`).
+   - **Node 22.x.** Vercel reads it from `engines.node` in `package.json`, and it overrides the dashboard's Node.js setting.
+2. **Settings → Environment Variables.** Scope every variable to **Production** only, and mark the three secrets (`SUPABASE_SERVICE_ROLE_KEY`, `WORKER_HMAC_SECRET`, `UNSUBSCRIBE_SECRET_V1`) as **Sensitive**.
 
    | Variable | Value |
    |---|---|
@@ -50,7 +63,7 @@ Every step below is done by the operator. The application never creates cloud re
 
 3. **Settings → Domains.** Add `<app-host>` and create the DNS record Vercel shows. This is a CNAME on the app's own host name. It never touches the root MX or SPF.
 4. **Settings → Deployment Protection.** The production domain must **not** sit behind Vercel Authentication. SNS and the unsubscribe links cannot log in.
-5. **Deploy** (Deployments → Redeploy, or push to `main`).
+5. **Deploy** (Deployments → Redeploy, or push to `main`) — only after every variable in the box above is set. In the build log, confirm `pnpm v10.34.6` and Node 22.
 
 ## 3. Supabase Auth settings
 
@@ -74,7 +87,14 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<app-host>/api/webhooks
 curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<app-host>/api/internal/worker/tick  # 401 (no signature)
 ```
 
-Then sign in, open each section, and confirm that the banner reads "Sending disabled".
+Then sign in and confirm that sending is off. Production shows **no** environment banner; the banner appears only in development. Check these instead:
+
+- **Settings → Email sending → Sending status:** the badge reads **Off**. As an owner or admin, open **Advanced / technical details**, which reads "Sending mode for this deployment: **Sending disabled**."
+- **Campaigns:** an information notice titled **"Email sending is currently turned off"** appears above the list.
+
+The dashboard's "Can I send an email?" panel names the sending mode only once the workspace has a verified sender and a postal address. Until then it reads "Not yet" and lists those steps, so it is not the check to use here.
+
+Finally, open each section once to confirm every page loads.
 
 ## 5. The sending clock (later: before the first dry run)
 
