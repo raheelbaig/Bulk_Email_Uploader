@@ -249,22 +249,52 @@ describe('the send path is closed by default', () => {
     expect(outboundProviderFor('live')).toBeNull();
   });
 
+  // Production refuses to boot at all without these (lib/env.ts), which is
+  // stronger than a closed gate: nothing runs, so nothing can be sent.
+  const BOOT_REQUIRED = new Set(['WORKER_HMAC_SECRET', 'UNSUBSCRIBE_SECRET_V1']);
+
   it.each(Object.keys(fullLive))('live mode without %s issues no live provider', async (missing) => {
     const env: Record<string, string> = { ...fullLive, EMAIL_SENDING_MODE: 'live' };
     delete env[missing];
     // Session tokens are optional; AWS_REGION etc. are not.
     const { outboundProviderFor, sendingConfig } = await withEnv(env);
+    if (BOOT_REQUIRED.has(missing)) {
+      expect(() => sendingConfig()).toThrow(new RegExp(`Invalid server environment.*${missing}`));
+      expect(() => outboundProviderFor('live')).toThrow(/Invalid server environment/);
+      return;
+    }
     expect(sendingConfig().live.allowed).toBe(false);
     expect(outboundProviderFor('live')).toBeNull();
   });
 
-  it('live mode with a plain-http app URL issues no live provider', async () => {
+  it('live mode with a plain-http app URL issues no live provider (production refuses to boot)', async () => {
     const { outboundProviderFor } = await withEnv({
       ...fullLive,
       EMAIL_SENDING_MODE: 'live',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     });
-    expect(outboundProviderFor('live')).toBeNull();
+    expect(() => outboundProviderFor('live')).toThrow(/Invalid server environment.*NEXT_PUBLIC_APP_URL/);
+  });
+
+  it.each([
+    ['NEXT_PUBLIC_APP_URL', { NEXT_PUBLIC_APP_URL: 'https://localhost:3000' }],
+    ['NEXT_PUBLIC_APP_URL', { NEXT_PUBLIC_APP_URL: 'https://127.0.0.1' }],
+    ['NEXT_PUBLIC_SUPABASE_URL', { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321' }],
+  ])('production refuses to boot with a non-public %s, naming it but not its value', async (name, patch) => {
+    const { sendingConfig } = await withEnv({ ...fullLive, ...patch });
+    let message = '';
+    try {
+      sendingConfig();
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain(name);
+    for (const value of Object.values(patch)) expect(message).not.toContain(value);
+  });
+
+  it('development boots without the production-only requirements', async () => {
+    const { sendingConfig } = await withEnv({ APP_ENVIRONMENT: 'development', NEXT_PUBLIC_APP_URL: 'http://localhost:3000' });
+    expect(sendingConfig().mode).toBe('disabled');
   });
 
   it('an SNS topic outside AWS_REGION (or AWS_ACCOUNT_ID) keeps live sending closed', async () => {
@@ -486,11 +516,13 @@ describe('secrets and credentials', () => {
   });
 
   it('the worker and unsubscribe secrets are read only where they are used', () => {
+    // src/lib/env.ts parses them and, in production, refuses to boot without
+    // them (a presence check — the value never leaves that module there).
     expect(readersOf('WORKER_HMAC_SECRET')).toEqual(
-      ['src/lib/sending/config.ts', PROVIDER_FACTORY, WORKER_ROUTE].sort(),
+      ['src/lib/env.ts', 'src/lib/sending/config.ts', PROVIDER_FACTORY, WORKER_ROUTE].sort(),
     );
     expect(readersOf('UNSUBSCRIBE_SECRET_V1')).toEqual(
-      ['src/lib/sending/config.ts', PROVIDER_FACTORY, 'src/lib/unsubscribe/server.ts'].sort(),
+      ['src/lib/env.ts', 'src/lib/sending/config.ts', PROVIDER_FACTORY, 'src/lib/unsubscribe/server.ts'].sort(),
     );
   });
 

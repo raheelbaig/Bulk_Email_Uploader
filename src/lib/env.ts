@@ -117,6 +117,41 @@ const serverSchema = z.object({
   CONTACT_COOLDOWN_HOURS: z.coerce.number().int().min(0).max(720).default(24),
 });
 
+/** A public https origin: not plain http, not a loopback or localhost name. */
+function isPublicHttps(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname !== 'localhost' &&
+      !url.hostname.endsWith('.localhost') &&
+      url.hostname !== '127.0.0.1' &&
+      url.hostname !== '[::1]'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A production deployment refuses to boot half-configured. Development and the
+ * test suite are unaffected. Live *sending* has its own, stricter gate
+ * (lib/sending/gate); these are the things production needs even with sending
+ * disabled: links in mail and auth emails point at a public https origin, the
+ * scheduler can authenticate, and unsubscribe links can be signed (scheduling a
+ * campaign requires it in every mode).
+ */
+const productionSchema = serverSchema.superRefine((env, ctx) => {
+  if (env.APP_ENVIRONMENT !== 'production') return;
+  const need = (ok: boolean, name: keyof typeof env) => {
+    if (!ok) ctx.addIssue({ code: 'custom', path: [name], message: `${name} is required in production` });
+  };
+  need(isPublicHttps(env.NEXT_PUBLIC_APP_URL), 'NEXT_PUBLIC_APP_URL');
+  need(isPublicHttps(env.NEXT_PUBLIC_SUPABASE_URL), 'NEXT_PUBLIC_SUPABASE_URL');
+  need(env.WORKER_HMAC_SECRET !== undefined, 'WORKER_HMAC_SECRET');
+  need(env.UNSUBSCRIBE_SECRET_V1 !== undefined, 'UNSUBSCRIBE_SECRET_V1');
+});
+
 export type ServerEnv = z.infer<typeof serverSchema>;
 
 let cached: ServerEnv | undefined;
@@ -130,7 +165,7 @@ let cached: ServerEnv | undefined;
 export function serverEnv(): ServerEnv {
   if (cached !== undefined) return cached;
 
-  const parsed = serverSchema.safeParse(process.env);
+  const parsed = productionSchema.safeParse(process.env);
   if (!parsed.success) {
     const names = parsed.error.issues
       .map((issue) => issue.path.join('.'))

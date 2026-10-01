@@ -4,13 +4,14 @@ Email campaign and bulk sending platform.
 
 > ## Sending is built, and off by default.
 >
-> This deployment is at **P5 — the sending engine**. Campaigns can be delivered
+> This deployment is at **P6 — provider events**. Campaigns can be delivered
 > through Amazon SES (outbound only), but nothing is sent unless an operator
 > deliberately turns it on:
 >
 > - `EMAIL_SENDING_MODE` defaults to `disabled`, in which the worker does nothing.
 > - `dry_run` runs the entire pipeline against a sink that delivers nothing.
-> - `live` also needs a configuration set, signing secrets and an https app URL,
+> - `live` also needs a configuration set, an SNS topic in the SES region,
+>   signing secrets and an https app URL,
 >   and the documented IAM policy still **denies** `ses:SendEmail` until the
 >   separate live policy is attached.
 >
@@ -26,6 +27,11 @@ Email campaign and bulk sending platform.
 | [`docs/adr/0001-ses-send-idempotency.md`](docs/adr/0001-ses-send-idempotency.md) | The SES crash window: what is and is not guaranteed, and why the system fails closed. Supersedes §13.4. |
 | [`docs/adr/0002-availability-and-recovery.md`](docs/adr/0002-availability-and-recovery.md) | Scheduling, availability and recovery. Withdraws the free-tier keep-alive claim. |
 | [`docs/adr/0003-sending-engine-implementation.md`](docs/adr/0003-sending-engine-implementation.md) | P5: where the sending engine departs from the blueprint, and what still needs external configuration. |
+| [`docs/adr/0004-send-safety.md`](docs/adr/0004-send-safety.md) | Send approval, daily cap, cooldown, postal address. |
+| [`docs/adr/0005-provider-events-and-consent-plan.md`](docs/adr/0005-provider-events-and-consent-plan.md) | P6: SES events over SNS (bounces, complaints); consent-tracking plan. |
+| [`docs/adr/0006-event-reconciliation-and-health.md`](docs/adr/0006-event-reconciliation-and-health.md) | P6 completion: Send/Delivery/Reject, reconciliation, health auto-pause, retention. |
+| [`docs/deployment.md`](docs/deployment.md) | Vercel + Supabase deployment runbook. |
+| [`docs/aws-setup.md`](docs/aws-setup.md) | SES, IAM, SNS and DNS setup, step by step. |
 
 ## Stack
 
@@ -180,8 +186,10 @@ sufficient to stop a send:
 1. **Mode.** `EMAIL_SENDING_MODE=disabled` (the default) makes every tick a
    no-op. `dry_run` uses a provider that performs no I/O at all.
 2. **The live gate.** `live` also requires AWS credentials,
-   `AWS_SES_CONFIGURATION_SET`, `UNSUBSCRIBE_SECRET_V1`, `WORKER_HMAC_SECRET`
-   and an https `NEXT_PUBLIC_APP_URL`, re-checked on every tick.
+   `AWS_SES_CONFIGURATION_SET`, an `AWS_SNS_TOPIC_ARN` in `AWS_REGION`,
+   `UNSUBSCRIBE_SECRET_V1`, `WORKER_HMAC_SECRET` and an https
+   `NEXT_PUBLIC_APP_URL`, re-checked on every tick. `APP_ENVIRONMENT=production`
+   refuses to boot without the secrets and an https app URL at all.
 3. **IAM.** `docs/ses-iam-policy.json` still explicitly denies `ses:SendEmail`.
    `docs/ses-iam-policy-live.json` — SendEmail only, one identity, one
    configuration set — is attached by an operator once DNS is confirmed.
@@ -202,6 +210,8 @@ the fixed regional SES host with redirects refused.
 job per recipient per campaign, at most one accepted attempt per job, at most
 one attempt in flight, an attempt row committed before every provider call, and
 unconfirmed outcomes held as `send_uncertain` — never retried automatically.
+An SES `Send` event for the attempt (migration 0017) confirms it, so only an
+attempt SES never acknowledged waits for a person.
 
 Every statement above is asserted by `tests/sending-gates.test.ts`,
 `tests/sending-worker.test.ts` and `tests/sending-db.test.ts`.
@@ -215,6 +225,6 @@ Every statement above is asserted by `tests/sending-gates.test.ts`,
 | P2 — Import engine | Complete |
 | P3 — Sender domains, identities and email authentication | Complete |
 | P4 — Templates, campaigns, preflight | Complete |
-| P5 — Sending engine | Complete, pending review. Off by default; see ADR-0003 §4 for the external setup before live use |
-| P6 — Events, bounces, unsubscribe | Bounce/complaint ingestion built (migration 0016, `POST /api/webhooks/ses`, ADR-0005 Part 1); not applied or connected to SNS yet. Health auto-pause not built. Unsubscribe links and one-click were built in P5 |
+| P5 — Sending engine | Complete. Off by default |
+| P6 — Events, bounces, unsubscribe | Complete in code: Bounce/Complaint (0016, applied), Send/Delivery/Reject reconciliation, health auto-pause and retention (0017, ADR-0006). Needs the AWS setup in docs/aws-setup.md. Unsubscribe links and one-click were built in P5 |
 | P7 — Health, analytics, hardening | Not started |
