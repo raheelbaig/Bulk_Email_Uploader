@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { use, useActionState } from 'react';
-import { signIn, type AuthFormState } from '../actions';
+import { requestPasswordReset, type AuthFormState } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,49 +12,39 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 const initialState: AuthFormState = { message: null };
 
 const NOTICES: Record<string, string> = {
-  'confirm-failed':
-    'That confirmation link could not sign you in. If you already confirmed your email, sign in below. If the link expired, sign up again with the same email address to get a new one.',
+  'link-expired': 'That reset link has expired or was already used. Request a new one below.',
 };
 
-export default function LoginPage({
+export default function ForgotPasswordPage({
   searchParams,
 }: {
   searchParams: Promise<{ notice?: string | string[] }>;
 }) {
-  const [state, action, pending] = useActionState(signIn, initialState);
+  const [state, action, pending] = useActionState(requestPasswordReset, initialState);
   const { notice } = use(searchParams);
   const noticeText = typeof notice === 'string' ? NOTICES[notice] : undefined;
 
   return (
     <Card className="shadow-sm">
       <CardHeader>
-        <CardTitle>Sign in</CardTitle>
-        <CardDescription>Welcome back. Sign in to continue to your workspace.</CardDescription>
+        <CardTitle>Reset your password</CardTitle>
+        <CardDescription>Enter the email address you sign in with and we will send you a reset link.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-4">
           {state.message === null && noticeText !== undefined && <Alert tone="info">{noticeText}</Alert>}
-          {state.message !== null && <Alert tone="destructive">{state.message}</Alert>}
+          {state.message !== null && <Alert tone={state.ok === true ? 'success' : 'destructive'}>{state.message}</Alert>}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="email">Email</Label>
             <Input id="email" name="email" type="email" autoComplete="email" required />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/forgot-password" className="text-sm text-(--color-primary) hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <Input id="password" name="password" type="password" autoComplete="current-password" required />
-          </div>
           <Button type="submit" disabled={pending} className="w-full">
-            {pending ? 'Signing in…' : 'Sign in'}
+            {pending ? 'Sending…' : 'Send reset link'}
           </Button>
           <p className="text-center text-sm text-(--color-muted-foreground)">
-            No account?{' '}
-            <Link href="/signup" className="font-medium text-(--color-primary) hover:underline">
-              Create one
+            Remembered it?{' '}
+            <Link href="/login" className="font-medium text-(--color-primary) hover:underline">
+              Sign in
             </Link>
           </p>
         </form>

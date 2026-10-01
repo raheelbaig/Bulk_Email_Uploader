@@ -3,6 +3,7 @@ import type { EmailOtpType } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/observability/logger';
 import { newRequestId, runWithContext } from '@/lib/observability/context';
+import { RECOVERY_COOKIE, RECOVERY_FLOW, RECOVERY_MAX_AGE_SECONDS } from '@/lib/auth/recovery';
 
 const OTP_TYPES: readonly EmailOtpType[] = ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email'];
 
@@ -11,7 +12,8 @@ function isOtpType(value: string | null): value is EmailOtpType {
 }
 
 /**
- * Landing point for the links in Supabase Auth emails (signup confirmation).
+ * Landing point for the links in Supabase Auth emails (signup confirmation and
+ * password recovery).
  *
  * Two shapes arrive here:
  * - `?code=` — the PKCE flow `@supabase/ssr` uses by default. Supabase has
@@ -41,8 +43,30 @@ export async function GET(request: NextRequest) {
       failure = error === null ? null : (error.code ?? error.message);
     }
 
+    // A password-recovery link: either our fixed `flow` flag on the PKCE
+    // redirect, or the OTP type on a direct template link. The destination is
+    // still fixed; the flag only chooses between two of them.
+    const recovery = params.get('flow') === RECOVERY_FLOW || type === 'recovery';
+
+    if (failure === null && recovery) {
+      const response = NextResponse.redirect(new URL('/reset-password', request.url));
+      response.cookies.set(RECOVERY_COOKIE, '1', {
+        httpOnly: true,
+        secure: request.nextUrl.protocol === 'https:',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: RECOVERY_MAX_AGE_SECONDS,
+      });
+      return response;
+    }
+
     if (failure === null) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+
+    if (recovery) {
+      logger.warn('password recovery link rejected', { reason: failure });
+      return NextResponse.redirect(new URL('/forgot-password?notice=link-expired', request.url));
     }
 
     logger.warn('auth confirmation rejected', { reason: failure });

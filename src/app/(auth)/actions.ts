@@ -1,7 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { RECOVERY_COOKIE, RECOVERY_FLOW } from '@/lib/auth/recovery';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { writeAuditLog } from '@/lib/audit';
@@ -160,8 +161,136 @@ export async function signUp(_prev: AuthFormState, formData: FormData): Promise<
   });
 }
 
+/** The signed-in user's workspace, for an audit row. Null when there is none. */
+async function membershipOf(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+  return data === null ? null : String(data.workspace_id);
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.auth.getUser();
+  if (data.user !== null) {
+    const workspaceId = await membershipOf(supabase, data.user.id);
+    if (workspaceId !== null) {
+      const meta = await requestMeta();
+      await writeAuditLog({
+        workspaceId,
+        actorId: data.user.id,
+        actorType: 'user',
+        action: 'auth.logout',
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+  }
   await supabase.auth.signOut();
   redirect('/login');
+}
+
+const resetRequestSchema = z.object({ email: z.string().trim().toLowerCase().pipe(z.email()) });
+
+/** Shown for every well-formed request, whether or not the account exists. */
+const RESET_SENT =
+  'If an account uses that address, we have sent it a link to choose a new password. The link works once and expires soon.';
+
+/**
+ * Asks Supabase Auth to email a password-recovery link.
+ *
+ * The answer never says whether the address has an account, and the throttle
+ * counts per address whether or not it exists, so neither is an oracle. The
+ * link returns to /auth/confirm with a fixed flag that sends it on to
+ * /reset-password; that URL must be in the project's Redirect URLs list.
+ */
+export async function requestPasswordReset(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  return runWithContext({ requestId: newRequestId(), route: 'action:requestPasswordReset' }, async () => {
+    const parsed = resetRequestSchema.safeParse({ email: formData.get('email') });
+    if (!parsed.success) return { message: 'Enter the email address you sign in with.' };
+
+    const meta = await requestMeta();
+    const throttled = await throttle([
+      ['auth.password_reset_account', parsed.data.email],
+      ['auth.password_reset_ip', meta.ip],
+    ]);
+    if (throttled !== null) return { message: throttled };
+
+    const appUrl = process.env['NEXT_PUBLIC_APP_URL'] ?? '';
+    const redirectTo = new URL('/auth/confirm', appUrl.length > 0 ? appUrl : 'http://localhost');
+    redirectTo.searchParams.set('flow', RECOVERY_FLOW);
+
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      ...(appUrl.length > 0 ? { redirectTo: redirectTo.toString() } : {}),
+    });
+    if (error !== null) {
+      // Logged by code only: the address is not repeated in logs.
+      logger.warn('password reset request failed', { reason: error.code ?? error.message, status: error.status });
+    }
+    return { ok: true, message: RESET_SENT };
+  });
+}
+
+const newPasswordSchema = z
+  .object({
+    password: z.string().min(8, 'Use at least 8 characters.').max(200, 'Use at most 200 characters.'),
+    confirm: z.string(),
+  })
+  .refine((value) => value.password === value.confirm, { message: 'The two passwords do not match.' });
+
+/**
+ * Sets a new password for the session a recovery link created.
+ *
+ * Refuses without the recovery marker (lib/auth/recovery) — the page does too,
+ * so this only matters to a forged form post. Clears the marker on success.
+ */
+export async function updatePassword(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  return runWithContext({ requestId: newRequestId(), route: 'action:updatePassword' }, async () => {
+    const jar = await cookies();
+    const supabase = await createSupabaseServerClient();
+    const { data: current } = await supabase.auth.getUser();
+    if (current.user === null || jar.get(RECOVERY_COOKIE) === undefined) {
+      return { message: 'This reset link has expired. Request a new one.' };
+    }
+
+    const parsed = newPasswordSchema.safeParse({ password: formData.get('password'), confirm: formData.get('confirm') });
+    if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? 'Choose a different password.' };
+
+    const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+    if (error !== null) {
+      logger.warn('password update rejected', { reason: error.code ?? error.message, status: error.status });
+      // Supabase's own messages here are about the password (too weak, same as
+      // before), never about anyone else's account, so they are safe to show.
+      return {
+        message:
+          error.code === 'same_password'
+            ? 'Choose a password you have not used for this account before.'
+            : error.code === 'weak_password'
+              ? 'That password is too easy to guess. Choose a longer or less common one.'
+              : 'We could not change the password. Request a new link and try again.',
+      };
+    }
+
+    jar.delete(RECOVERY_COOKIE);
+    const workspaceId = await membershipOf(supabase, current.user.id);
+    if (workspaceId !== null) {
+      const meta = await requestMeta();
+      await writeAuditLog({
+        workspaceId,
+        actorId: current.user.id,
+        actorType: 'user',
+        action: 'auth.password_changed',
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+    redirect('/dashboard');
+  });
 }

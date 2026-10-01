@@ -27,6 +27,7 @@ export const AUDIT_ACTIONS = [
   'auth.logout',
   'auth.signup',
   'auth.password_reset_requested',
+  'auth.password_changed',
   // tenancy
   'workspace.bootstrapped',
   'workspace.renamed',

@@ -525,6 +525,8 @@ describe('the rate limiter', () => {
     expect(Object.keys(RATE_LIMITS).sort()).toEqual([
       // QA pass 2 — unauthenticated entry points, keyed by a hashed subject:
       // per account (the control that cannot be dodged) and per client.
+      'auth.password_reset_account',
+      'auth.password_reset_ip',
       'auth.sign_in_account',
       'auth.sign_in_ip',
       'auth.sign_up_ip',

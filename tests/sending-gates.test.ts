@@ -362,7 +362,14 @@ describe('entry points', () => {
     expect(code).toMatch(/export async function GET\(/);
     expect(code).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)\(/);
     const targets = [...code.matchAll(/NextResponse\.redirect\(new URL\(([^,]+),/g)].map((m) => m[1]);
-    expect(targets).toEqual(["'/dashboard'", "'/login?notice=confirm-failed'"]);
+    expect(targets).toEqual([
+      "'/reset-password'",
+      "'/dashboard'",
+      "'/forgot-password?notice=link-expired'",
+      "'/login?notice=confirm-failed'",
+    ]);
+    // The recovery flag is compared to a constant; it never becomes a URL.
+    expect(code).toMatch(/params\.get\('flow'\) === RECOVERY_FLOW/);
     expect(code).not.toMatch(/get\(['"](next|redirect_to|returnTo)['"]\)/);
   });
 

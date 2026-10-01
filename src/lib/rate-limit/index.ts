@@ -40,7 +40,10 @@ export type RateLimitAction =
   // subject rather than a session, because there is no session yet.
   | 'auth.sign_in_account'
   | 'auth.sign_in_ip'
-  | 'auth.sign_up_ip';
+  | 'auth.sign_up_ip'
+  // Password reset requests (2026-10-01). Each one makes Supabase send an email.
+  | 'auth.password_reset_account'
+  | 'auth.password_reset_ip';
 
 export interface RateLimitRule {
   limit: number;
@@ -144,6 +147,19 @@ export const RATE_LIMITS: Record<RateLimitAction, RateLimitRule> = {
     limit: 10,
     windowSeconds: 3600,
     message: 'Too many sign-up attempts. Wait an hour and try again.',
+  },
+  // Every request sends an email to the address, so this bounds how often a
+  // stranger can make someone's inbox receive reset links. Counted whether or
+  // not the account exists, so the refusal is not an existence oracle.
+  'auth.password_reset_account': {
+    limit: 3,
+    windowSeconds: 3600,
+    message: 'Too many reset requests for this address. Wait an hour and try again.',
+  },
+  'auth.password_reset_ip': {
+    limit: 10,
+    windowSeconds: 3600,
+    message: 'Too many reset requests. Wait an hour and try again.',
   },
 };
 

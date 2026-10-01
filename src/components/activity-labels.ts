@@ -10,6 +10,7 @@ export const ACTIVITY_LABEL: Record<AuditAction, string> = {
   'auth.logout': 'Signed out',
   'auth.signup': 'Account created',
   'auth.password_reset_requested': 'Password reset requested',
+  'auth.password_changed': 'Password changed',
   'workspace.bootstrapped': 'Workspace created',
   'workspace.renamed': 'Workspace renamed',
   'workspace.settings_updated': 'Workspace settings updated',
